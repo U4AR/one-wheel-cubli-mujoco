@@ -578,6 +578,11 @@ class PogoSim:
     def set_mode(self, mode):
         """'stick' (balance only), 'hop' (continuous jumping), 'stop' (finish the
         current jump, then back to stick)."""
+        if self.phase == "getup" and mode in ("hop", "hop_fwd", "hop_back", "stick", "stop"):
+            # remember it: the get-up hands over to this mode when it is back up
+            self.fwd = {"hop_fwd": 1, "hop_back": -1}.get(mode, 0)
+            self.resume_mode = "hop" if mode.startswith("hop") else "stick"
+            return
         if mode == "flip":
             self.flip_request = True
             if self.phase == "stick":
