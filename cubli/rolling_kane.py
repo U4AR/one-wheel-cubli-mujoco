@@ -80,12 +80,13 @@ def _linearize_full(v, rp):
     m_h, (Icx, Icy, Icz) = rp.housing()
     Iwt = max(P.I_wy, 0.5 * P.I_wx * 1.0001)
     r_eff = rp.R + 0.01                                     # rim capsule radius
+    gs = getattr(rp, "gyro_inertia", 1.0)
     vals = dict(zip(params, [r_eff, rp.M_hoop, rp.d, P.g0, rp.eta, rp.bearing_damping,
-                             rp.wheel_tilt, m_h, Icx, Icy, Icz, P.m_w, P.I_wx, Iwt]))
+                             rp.wheel_tilt, m_h, Icx, Icy, Icz, P.m_w, P.I_wx * gs, Iwt * gs]))
     q1, q2, q3, q4, q5 = qs
     u1, u2, u3, u4, u5 = us
-    op = {q1: 0, q2: 0, q3: 0, q4: 0, q5: 0, u1: 0, u2: v / r_eff, u3: 0, u4: 0, u5: 0,
-          T: 0, Th: 0}
+    op = {q1: 0, q2: 0, q3: 0, q4: 0, q5: 0, u1: 0, u2: v / r_eff, u3: 0, u4: 0,
+          u5: getattr(rp, "gyro_speed", 0.0), T: 0, Th: 0}
     for q in qs:
         op[q.diff()] = 0
     op[u2.diff()] = 0
@@ -109,11 +110,17 @@ def linear_model_at_speed(v, rp: RollingParams = RollingParams()):
 
 
 def linear_model_drive(v, rp: RollingParams = RollingParams()):
-    """With the hub motor: A (7x7), B (7x2) for x = (lean, lean_rate, yaw_rate, pitch,
-    pitch_rate, wheel_speed, hoop_spin), inputs (wheel torque, hub torque)."""
+    """A (7x7) and B for x = (lean, lean_rate, yaw_rate, pitch, pitch_rate, wheel_speed,
+    hoop_spin). drive="hub": B is 7x2 (wheel torque, hub torque); drive="single": B is
+    7x1 for the one differential motor (wheel torque tau + hub torque g*tau)."""
     A, B = _linearize_full(v, rp)
     keep = [1, 5, 7, 3, 8, 9, 6]         # ... + u2 (hoop spin = speed / r)
-    return A[np.ix_(keep, keep)], B[keep]
+    A, B = A[np.ix_(keep, keep)], B[keep]
+    if rp.drive == "single":
+        B = B[:, :1] + rp.g_hoop * B[:, 1:2]
+    elif rp.drive == "gyro":
+        B = B[:, 1:2]                    # hub motor is the only input
+    return A, B
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +359,7 @@ class DriveController:
         for v in V_DRIVE:
             A7, B7 = linear_model_drive(v, rp)
             A = np.zeros((8, 8)); A[:7, :7] = A7; A[7, 6] = 1.0     # integrator of spin error
-            B = np.zeros((8, 2)); B[:7] = B7
+            B = np.zeros((8, B7.shape[1])); B[:7] = B7
             # where to put conserved turning momentum: at speed it must go into the
             # wheel (turning would mean leaning into a circle); near standstill the
             # hoop can just turn in place, which keeps the wheel unloaded
@@ -362,7 +369,7 @@ class DriveController:
             w, xeq = _conserved_general(A, B, weights=[1e4, 1, w_yaw, 1, 1, w_wheel, 1e4, 1e4])
             Ad, Bd = _c2d(A, B, Ts)
             An, Bn = Si @ Ad @ S, Si @ Bd
-            Rm = np.diag(R)
+            Rm = np.diag(R[:B.shape[1]])
             if w is None:
                 Pr = solve_discrete_are(An, Bn, np.diag(Q), Rm)
                 K = np.linalg.solve(Rm + Bn.T @ Pr @ Bn, Bn.T @ Pr @ An) @ Si
@@ -381,7 +388,7 @@ class DriveController:
         self.reset()
 
     def reset(self, v=0.0):
-        self.u = np.zeros(2)
+        self.u = np.zeros(self.Bd.shape[-1]) if hasattr(self, "Bd") and len(self.Bd) else np.zeros(2)
         self.integ = 0.0
         self.v_cmd = v                 # rate-limited speed command actually tracked
         self.v_target = v
@@ -424,8 +431,16 @@ def simulate_drive(rp=RollingParams(), T=20.0, v_target=lambda t: 0.0, lean0_deg
     r = rp.R + 0.01
     d.qpos[2] = r * np.cos(np.deg2rad(lean0_deg)) + 1e-4
     d.qvel[0] = v0; d.qvel[4] = v0 / r; d.qvel[m.joint("axle").dofadr[0]] = -v0 / r
+    gyro = rp.drive == "gyro"
+    if gyro:
+        d.qvel[m.joint("phi").dofadr[0]] = rp.gyro_speed          # pre-spun gyroscope
     mujoco.mj_forward(m, d)
-    ctrl = ctrl or DriveController(rp, Ts)
+    single = rp.drive in ("single", "gyro")
+    ctrl = ctrl or (SingleMotorController(rp, Ts) if single else DriveController(rp, Ts))
+    # single motor: the hoop torque g*tau reacts on the hanging housing, which gravity
+    # can only hold up to m_c*g*d -- beyond that the housing swings over the top
+    m_c = rp.housing()[0] + P.m_w
+    tau_cap = 0.8 * m_c * P.g0 * rp.d / max(rp.g_hoop, 1e-6) if rp.drive == "single" else np.inf
     ctrl.reset(v0)
     motor = Motor(P)
     bias = np.array([rng.normal(0, np.deg2rad(0.1)), 0, 0, rng.normal(0, np.deg2rad(0.1)), 0, 0, 0])
@@ -442,11 +457,27 @@ def simulate_drive(rp=RollingParams(), T=20.0, v_target=lambda t: 0.0, lean0_deg
     for k in range(int(T / Ts)):
         ctrl.v_target = v_target(d.time)
         u = ctrl.step(y, vm)
-        uw, _ = motor.limit(float(u[0]), d.qvel[m.joint("phi").dofadr[0]], Ts)
-        uh = float(np.clip(u[1], -rp.hub_tau, rp.hub_tau))
-        ctrl.applied([uw, uh])
-        y, vm, x_true = meas()
-        d.ctrl[0], d.ctrl[1] = uw, uh
+        if gyro:
+            uh = float(np.clip(u[0], -rp.hub_tau, rp.hub_tau))
+            uw = 0.0
+            ctrl.applied([uh])
+            y, vm, x_true = meas()
+            d.ctrl[0] = uh
+        elif single:
+            # motor speed = relative speed across the differential
+            w_motor = d.qvel[m.joint("phi").dofadr[0]] + rp.g_hoop * d.qvel[m.joint("axle").dofadr[0]]
+            uw, _ = motor.limit(float(u[0]), w_motor, Ts)
+            uw = float(np.clip(uw, -tau_cap, tau_cap))
+            uh = rp.g_hoop * uw
+            ctrl.applied([uw])
+            y, vm, x_true = meas()
+            d.ctrl[0] = uw
+        else:
+            uw, _ = motor.limit(float(u[0]), d.qvel[m.joint("phi").dofadr[0]], Ts)
+            uh = float(np.clip(u[1], -rp.hub_tau, rp.hub_tau))
+            ctrl.applied([uw, uh])
+            y, vm, x_true = meas()
+            d.ctrl[0], d.ctrl[1] = uw, uh
         for _ in range(int(round(Ts / dt))):
             d.xfrc_applied[:] = 0
             for t0, dur, bname, F, pt in pushes:
@@ -458,3 +489,113 @@ def simulate_drive(rp=RollingParams(), T=20.0, v_target=lambda t: 0.0, lean0_deg
             fell = True
             break
     return np.array(log), fell
+
+
+# ---------------------------------------------------------------------------
+# ONE motor: floating (differential) motor between hoop and flywheel
+V_SINGLE = np.array([-1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5])
+SCALE_S = np.array([np.deg2rad(1), np.deg2rad(10), np.deg2rad(10), np.deg2rad(10), np.deg2rad(30), 50.0, 0.3])
+
+
+def _null(M, tol=1e-9):
+    _, s, Vt = np.linalg.svd(M)
+    rank = int((s > tol * s.max()).sum()) if s.size else 0
+    return Vt[rank:].T
+
+
+class SingleMotorController:
+    """One input (gyro variant: the hub motor; differential variant: the floating
+    motor). Conserved quantities of the linear model (vertical angular momentum,
+    gyro spin, and for the differential the hoop-spin/flywheel momentum) are removed
+    exactly before the LQR design. The reference is the nicest torque-free state
+    with the same conserved values and the commanded hoop spin (precomputed as
+    x_ref = M1 x + m2 * spin_ref per speed). Integral action on the spin error
+    supplies the steady push that rolling friction needs."""
+
+    def __init__(self, rp, Ts=0.01, Q=(1.0, 0.1, 0.01, 0.1, 0.05, 0.02, 1.0, 0.3), Rw=20.0,
+                 accel=0.35, v_min=-0.3, v_max=3.0, w_lim=380.0):
+        self.rp, self.Ts, self.accel, self.v_min, self.v_max, self.w_lim = rp, Ts, accel, v_min, v_max, w_lim
+        self.r = rp.R + 0.01
+        Q = tuple(Q) + (0.3,) * (8 - len(Q))
+        Sd = np.concatenate([SCALE_S, [0.3]])
+        S = np.diag(Sd); Si = np.linalg.inv(S)
+        self.K, self.Ad, self.Bd, self.M1, self.m2 = [], [], [], [], []
+        for v in V_SINGLE:
+            A7, B7 = linear_model_drive(v, rp)
+            W7 = _null(np.hstack([A7, B7]).T).T               # conserved functionals (7-state)
+            N7 = _null(A7)
+            fast = min(abs(v) / 1.5, 1.0)
+            Wt = np.diag([1e4, 1.0, 10 ** (-2 + 5 * fast), 1.0, 1.0, 10 ** (0 - 4 * fast), 1e-6])
+            H = np.vstack([W7 @ N7, np.eye(7)[6] @ N7])
+            Gi = np.linalg.inv(N7.T @ Wt @ N7 + 1e-12 * np.eye(N7.shape[1]))
+            Lm = N7 @ Gi @ H.T @ np.linalg.pinv(H @ Gi @ H.T)
+            k = W7.shape[0]
+            self.M1.append(Lm[:, :k] @ W7); self.m2.append(Lm[:, k])
+            # augmented design model: + integrator of spin error
+            A = np.zeros((8, 8)); A[:7, :7] = A7; A[7, 6] = 1.0
+            B = np.zeros((8, 1)); B[:7] = B7
+            W = np.hstack([W7, np.zeros((k, 1))])
+            N = _null(A)
+            Ad, Bd = _c2d(A, B, Ts)
+            An, Bn = Si @ Ad @ S, Si @ Bd
+            Wn, Nn = W @ S, Si @ N
+            Xeq = Nn @ np.linalg.pinv(Wn @ Nn)
+            Pn = np.eye(8) - Xeq @ Wn
+            V = _null(Wn)
+            Ar, Br = V.T @ Pn @ An @ V, V.T @ Pn @ Bn
+            Pr = solve_discrete_are(Ar, Br, V.T @ np.diag(Q) @ V, np.array([[Rw]]))
+            Kr = np.linalg.solve(Rw + Br.T @ Pr @ Br, Br.T @ Pr @ Ar)
+            self.K.append(Kr @ V.T @ Si); self.Ad.append(Ad[:7, :7]); self.Bd.append(Bd[:7])
+        self.K, self.Ad, self.Bd, self.M1, self.m2 = map(np.array, (self.K, self.Ad, self.Bd, self.M1, self.m2))
+        self.lim = np.array([np.deg2rad(6), np.inf, 1.5, np.inf, np.inf, np.inf, np.inf])
+        self.reset()
+
+    def reset(self, v=0.0):
+        self.u = np.zeros(1)
+        self.integ = 0.0
+        self.v_cmd = v
+        self.v_target = v
+        self.v_feasible = (self.v_min, self.v_max)
+
+    def _interp(self, arr, v):
+        v = float(np.clip(v, V_SINGLE[0], V_SINGLE[-1]))
+        i = int(np.clip(np.searchsorted(V_SINGLE, v) - 1, 0, len(V_SINGLE) - 2))
+        a = (v - V_SINGLE[i]) / (V_SINGLE[i + 1] - V_SINGLE[i])
+        return (1 - a) * arr[i] + a * arr[i + 1]
+
+    def step(self, x_delayed, v_meas):
+        x = np.asarray(x_delayed, float)
+        Ad, Bd, K, M1, m2 = (self._interp(a, v_meas) for a in (self.Ad, self.Bd, self.K, self.M1, self.m2))
+        xhat = Ad @ x + Bd @ self.u
+        base = M1 @ xhat
+        if abs(m2[5]) > 1e-6:          # differential: flywheel speed follows the hoop speed
+            s_a, s_b = (np.array([-self.w_lim, self.w_lim]) - base[5]) / m2[5]
+            lo_v, hi_v = sorted([s_a * self.r, s_b * self.r])
+        else:
+            lo_v, hi_v = -np.inf, np.inf
+        lo_v, hi_v = max(lo_v, self.v_min), min(hi_v, self.v_max)
+        self.v_feasible = (lo_v, hi_v)
+        tgt = float(np.clip(self.v_target, lo_v, hi_v)) if lo_v <= hi_v else self.v_cmd
+        self.v_cmd += float(np.clip(tgt - self.v_cmd, -self.accel * self.Ts, self.accel * self.Ts))
+        spin_ref = self.v_cmd / self.r
+        self.integ = float(np.clip(self.integ + (xhat[6] - spin_ref) * self.Ts, -2.0, 2.0))
+        xref = np.clip(base + m2 * spin_ref, -self.lim, self.lim)
+        err = np.concatenate([xhat - xref, [self.integ]])
+        self.u = -(K @ err)
+        return self.u.copy()
+
+    def applied(self, u):
+        self.u = np.atleast_1d(np.asarray(u, float))
+
+# ---------------------------------------------------------------------------
+# Final single-motor design: hub motor + passive gyroscope (scripts/rolling_single.py)
+def gyro_design():
+    rp = RollingParams(drive="gyro", wheel_tilt=np.pi / 2, eta=0.0, gyro_speed=450.0,
+                       gyro_inertia=2.0, d=0.2)
+    return rp
+
+
+def gyro_controller(rp=None, Ts=0.01):
+    rp = rp or gyro_design()
+    return SingleMotorController(rp, Ts, Q=(1.0, 0.1, 0.01, 1.0, 0.05, 1e-3, 0.3, 0.1), Rw=60.0,
+                                 v_min=-0.5, v_max=2.0, accel=0.25, w_lim=1e9)

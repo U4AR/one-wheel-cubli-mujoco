@@ -1,0 +1,47 @@
+{
+ "cruise": [
+  {
+   "target": -0.5,
+   "fell": false,
+   "speed_held": -0.503,
+   "stopped_at": 0.002,
+   "lean_std_deg": 0.26
+  },
+  {
+   "target": 0.5,
+   "fell": false,
+   "speed_held": 0.503,
+   "stopped_at": 0.002,
+   "lean_std_deg": 0.26
+  },
+  {
+   "target": 1.0,
+   "fell": false,
+   "speed_held": 0.791,
+   "stopped_at": -0.032,
+   "lean_std_deg": 1.19
+  },
+  {
+   "target": 1.5,
+   "fell": false,
+   "speed_held": 1.532,
+   "stopped_at": -0.036,
+   "lean_std_deg": 1.22
+  },
+  {
+   "target": 2.0,
+   "fell": false,
+   "speed_held": 2.078,
+   "stopped_at": -0.038,
+   "lean_std_deg": 0.88
+  }
+ ],
+ "max_push": {
+  "-0.5": 11.8,
+  "0.0": 11.8,
+  "0.5": 11.8,
+  "1.0": 11.8,
+  "2.0": 11.8
+ },
+ "capture_deg": 8
+}

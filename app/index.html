@@ -134,7 +134,8 @@
         <button class="vset" data-v="3">3 m/s</button><button class="vset" data-v="-0.3">reverse</button>
         <span class="muted"><kbd>W</kbd>/<kbd>S</kbd> ±0.25</span>
       </div>
-      <div class="muted">Two motors. A hub motor between the hoop and the hanging housing drives the speed: it swings the housing forward or back, and gravity holds it there. The reaction wheel balances it sideways; its axis is on the lean axis, tilted up 15° to soak up turning momentum. Speed changes are limited to 0.35 m/s², so the housing never pitches more than the wheel is tilted. Reverse is limited to 0.3 m/s. Near standstill, leftover turning momentum lets the hoop turn in place, so the wheel stays unloaded. Kicks and pushes still work, and it returns to the target speed. ←/→ push it sideways.</div>
+      <div class="muted" id="rollInfo"></div>
+      <div class="muted" hidden>Two motors. A hub motor between the hoop and the hanging housing drives the speed: it swings the housing forward or back, and gravity holds it there. The reaction wheel balances it sideways; its axis is on the lean axis, tilted up 15° to soak up turning momentum. Speed changes are limited to 0.35 m/s², so the housing never pitches more than the wheel is tilted. Reverse is limited to 0.3 m/s. Near standstill, leftover turning momentum lets the hoop turn in place, so the wheel stays unloaded. Kicks and pushes still work, and it returns to the target speed. ←/→ push it sideways.</div>
     </div>
 
     <div class="panel">
@@ -200,7 +201,8 @@
           <option value="oval_035">oval hoop 1.04×0.36 m + tip weights, housing in middle (balances)</option>
           <option value="oval_025">oval hoop 1.10×0.28 m + tip weights, housing in middle (balances)</option>
           <option value="oval_018">oval hoop 1.14×0.20 m + tip weights (≈ paper performance)</option>
-          <option value="rolling_hoop">ROLLING hoop Ø0.66 m, hub + hanging housing (rolls on the floor)</option>
+          <option value="rolling_hoop">ROLLING hoop: reaction wheel + hub motor (2 motors)</option>
+          <option value="rolling_single">ROLLING hoop: ONE motor (hub) + passive gyro</option>
         </select></div>
       <label class="sl">End mass each [kg] <output id="oMe"></output><input id="me" type="range" min="0.15" max="0.5" step="0.01" value="0.304"></label>
       <label class="sl">Beam frequency f0 [Hz] <output id="oFb"></output><input id="fb" type="range" min="20" max="120" step="0.5" value="57.2"></label>
@@ -360,6 +362,13 @@ function onTelemetry(m) {
   if (m.grab == null && !grabbing) $("grabInfo").textContent = "Not grabbing";
   $("yawOn").disabled = !state.yaw_available;
   $("rollPanel").hidden = !state.rolling;
+  if (state.rolling) {
+    const one = state.tuning.includes("ONE");
+    $("vt").min = one ? -0.5 : -0.3; $("vt").max = one ? 2 : 3;
+    $("rollInfo").innerHTML = one ?
+      "<b>One motor.</b> The hub motor between the hoop and the hanging housing is the only actuator. It drives the speed by swinging the housing, with gravity holding it. It also balances sideways: the housing carries an unpowered gyroscope (vertical axis, pre-spun to 450 rad/s), and swinging the housing makes it precess, which pushes the hoop sideways. Speed range −0.5…2 m/s. It wobbles more (~0.3–1°) than the two-motor version. A real gyro slowly loses speed and needs occasional re-spinning." :
+      "<b>Two motors.</b> A hub motor drives the speed (it swings the hanging housing, and gravity holds it). The reaction wheel balances it sideways, with its axis on the lean axis tilted up 15°. Speed changes ≤ 0.35 m/s² keep the housing pitch below the wheel tilt. Reverse ≤ 0.3 m/s.";
+  }
   if (state.rolling) $("hud").innerHTML += `<br><span style="color:#ffd36b">${state.rolling.speed.toFixed(2)} m/s · ${state.rolling.distance.toFixed(1)} m</span>`;
   if (document.activeElement !== $("tuning")) $("tuning").value = state.tuning;
   if (!state.yaw_available && $("yawOn").checked) $("yawOn").checked = false;
@@ -404,7 +413,7 @@ $("applyPlant").onclick = () => { for (const k in buf) buf[k].length = 0; send({
 const sendYaw = () => send({ cmd: "yaw", on: $("yawOn").checked, heading_deg: +$("head").value });
 $("yawOn").onchange = sendYaw; $("head").onchange = sendYaw;
 $("plantDefault").onclick = () => { $("me").value = 0.304; $("fb").value = 57.2; $("comoff").value = 2; $("tilt").value = 0; $("ecc").value = 0; ["tilt", "ecc"].forEach(i => $(i).dispatchEvent(new Event("input"))); $("me").dispatchEvent(new Event("input")); $("fb").dispatchEvent(new Event("input")); $("comoff").dispatchEvent(new Event("input")); };
-const setV = (v) => { v = Math.max(-0.3, Math.min(3, v)); $("vt").value = v; $("vt").dispatchEvent(new Event("input")); send({ cmd: "speed_target", speed: v }); };
+const setV = (v) => { v = Math.max(+$("vt").min, Math.min(+$("vt").max, v)); $("vt").value = v; $("vt").dispatchEvent(new Event("input")); send({ cmd: "speed_target", speed: v }); };
 document.querySelectorAll(".vset").forEach(b => b.onclick = () => setV(+b.dataset.v));
 $("vt").onchange = () => setV(+$("vt").value);
 $("jobTune").onclick = () => { liveTune = []; send({ cmd: "job", name: "tune", gens: +$("tuneGens").value, pop: +$("tunePop").value, warm: true }); };

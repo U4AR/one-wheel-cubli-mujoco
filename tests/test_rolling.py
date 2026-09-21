@@ -30,3 +30,12 @@ def test_hub_motor_tracks_speed():
     L, fell = simulate_drive(RollingParams(), T=12.0, v_target=lambda t: 1.0 if t > 1 else 0.0, lean0_deg=1.0)
     assert not fell
     assert abs(L[-100:, 7].mean() - 1.0) < 0.05
+
+
+def test_single_motor_gyro_balances_and_tracks_speed():
+    from cubli.rolling_kane import simulate_drive, gyro_design, gyro_controller
+    rp = gyro_design()
+    L, fell = simulate_drive(rp, T=14.0, v_target=lambda t: 0.5 if t > 1 else 0.0,
+                             ctrl=gyro_controller(rp), lean0_deg=1.0)
+    assert not fell
+    assert abs(L[-100:, 7].mean() - 0.5) < 0.08

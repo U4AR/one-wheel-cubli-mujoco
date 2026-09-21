@@ -6,16 +6,18 @@ import mujoco
 from PIL import Image
 
 from .rolling import RollingParams, load, P
-from .rolling_kane import DriveController, measure6
+from .rolling_kane import DriveController, measure6, gyro_controller
 from .sim import Motor
 
 _CTRL_CACHE = {}
 
 
 def controller_for(rp):
-    key = (rp.R, rp.M_hoop, rp.d, rp.eta, rp.wheel_tilt, rp.bearing_damping)
+    key = (rp.R, rp.M_hoop, rp.d, rp.eta, rp.wheel_tilt, rp.bearing_damping, rp.drive,
+           rp.gyro_speed, rp.gyro_inertia)
     if key not in _CTRL_CACHE:
-        _CTRL_CACHE[key] = DriveController(rp)      # wheel (balance) + hub motor (speed)
+        # gyro: ONE hub motor + passive gyroscope; hub: reaction wheel + hub motor
+        _CTRL_CACHE[key] = gyro_controller(rp) if rp.drive == "gyro" else DriveController(rp)
     c = _CTRL_CACHE[key]
     c.reset(0.0)
     return c
@@ -31,7 +33,8 @@ class LiveRolling:
         self.plant = types.SimpleNamespace(layout="rolling", ring_radius=rp.R, m_e=0.0,
                                            beam_freq_hz=lambda: 0.0, com_offset_xy=(0.0, 0.0),
                                            wheel_tilt=rp.wheel_tilt, wheel_ecc=0.0)
-        self.tuning_name = "speed-scheduled LQR, 2 motors"
+        self.tuning_name = ("speed-scheduled LQR, ONE motor + gyro" if rp.drive == "gyro"
+                            else "speed-scheduled LQR, 2 motors")
         self.com_enable, self.noise_scale, self.delay_steps = False, 1.0, 1
         self.controller_on, self.yaw_on, self.yaw, self.heading_ref = True, False, None, 0.0
         self.renderer = None
@@ -96,6 +99,8 @@ class LiveRolling:
         w_world = a * (v / self.r_eff)
         d.qvel[3:6] = d.xmat[hb].reshape(3, 3).T @ w_world
         d.qvel[self.axle_dof] = -v / self.r_eff            # housing keeps hanging still
+        if self.rp.drive == "gyro":
+            d.qvel[self.wheel_dof] = self.rp.gyro_speed     # pre-spun gyroscope
         mujoco.mj_forward(self.m, d)
 
     # --------------------------------------------------------------- dynamics
@@ -134,14 +139,23 @@ class LiveRolling:
         self._update_grab_force()
         self.buf.append(self.measure()); self.buf.pop(0)
         y, vm = self.buf[0]
+        gyro = self.rp.drive == "gyro"
         if self.controller_on and not self.fell:
             u_cmd = self.ctrl.step(y, vm)
-            self.u, self.ulim = self.motor.limit(float(u_cmd[0]), d.qvel[self.wheel_dof], self.Ts)
-            self.u_hub = float(np.clip(u_cmd[1], -self.rp.hub_tau, self.rp.hub_tau))
-            self.ctrl.applied([self.u, self.u_hub])
+            if gyro:        # the hub motor is the only actuator
+                self.u_hub = float(np.clip(u_cmd[0], -self.rp.hub_tau, self.rp.hub_tau))
+                self.u, self.ulim = self.u_hub, self.rp.hub_tau
+                self.ctrl.applied([self.u_hub])
+            else:
+                self.u, self.ulim = self.motor.limit(float(u_cmd[0]), d.qvel[self.wheel_dof], self.Ts)
+                self.u_hub = float(np.clip(u_cmd[1], -self.rp.hub_tau, self.rp.hub_tau))
+                self.ctrl.applied([self.u, self.u_hub])
         else:
             self.u, self.ulim, self.u_hub = 0.0, 0.0, 0.0
-        d.ctrl[0], d.ctrl[1] = self.u, self.u_hub
+        if gyro:
+            d.ctrl[0] = self.u_hub
+        else:
+            d.ctrl[0], d.ctrl[1] = self.u, self.u_hub
         for _ in range(int(round(self.Ts / self.dt))):
             d.xfrc_applied[:] = 0
             self.pulses = [p for p in self.pulses if d.time < p[0]]
@@ -182,7 +196,9 @@ class LiveRolling:
                                f_beam=0.0, com_offset_mm=0.0),
                     rolling=dict(speed=float(v), distance=self.dist, yaw_rate=float(x[2]),
                                  pitch_deg=float(np.rad2deg(x[3])), v_target=float(self.ctrl.v_target),
-                                 v_cmd=float(self.ctrl.v_cmd), hub_torque=float(self.u_hub)))
+                                 v_cmd=float(self.ctrl.v_cmd), hub_torque=float(self.u_hub),
+                                 v_feasible=[float(v) for v in getattr(self.ctrl, "v_feasible", (0, 0))],
+                                 integ=float(getattr(self.ctrl, "integ", 0.0))))
 
     # ------------------------------------------------------------ interaction
     def _cam_axes(self):

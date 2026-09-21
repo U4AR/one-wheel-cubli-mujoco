@@ -284,6 +284,26 @@ This is a two-input, speed-scheduled LQR: the wheel torque balances it, and the 
 
 Every run brakes back to 0 m/s, with peak housing pitch ≤ 15°. On a 75 s stress sequence (0 → 1 → 2 → stop → reverse → stop → 3 m/s → stop, with three 5 N pushes mid-drive), 1 of 16 noise seeds fell. The hub motor is assumed to give ±2 N m; it uses well under 1 N m in these runs. In the live viewer, the rolling-hoop layout has a target-speed slider, speed buttons, and W/S/X keys.
 
+#### ONE motor: hub motor + passive gyroscope (`gyro_design()`, `scripts/rolling_single.py`)
+
+I tried several single-motor designs; this is what the physics allows.
+
+- **Floating motor between the hoop and the flywheel** (a differential via a bevel gear, `drive="single"`). One torque both spins the flywheel (lean) and turns the hoop (speed). The model shows a second conserved quantity, though: hoop spin + a·flywheel speed = const. The flywheel has to store all the drive momentum, so rolling friction drains it and it can't cruise. The gear ratio has to be high enough for a useful speed range, and then every balance correction also shoves the hanging housing (g·τ) past what gravity can hold. It balanced standing but couldn't drive reliably.
+- **What does work: any sustained propulsion must react against the gravity-held housing**, so the one motor has to be the hub motor. A hub motor can't push sideways, so the sideways authority comes from a **passive gyroscope** in the housing, as in CMU's Gyrover and the early gyro-monorails. Its axis is vertical, it has 2× the paper flywheel's inertia, and it is pre-spun to 450 rad/s. Swinging the housing with the hub motor makes the gyro precess, which pushes the hoop sideways. The lean instability (3.2 /s) is fully controllable through it (PBH rank 7/7). The controller is a single-input, speed-scheduled LQR. It removes the conserved quantities (vertical angular momentum, gyro spin) exactly, and uses integral action for rolling friction.
+
+| command | −0.5 | 0 | 0.5 | 1.0 | 1.5 | 2.0 m/s |
+|---|---|---|---|---|---|---|
+| speed held | −0.50 | 0.00 | 0.50 | 0.79 | 1.53 | 2.08 |
+| max sideways push (50 ms) | 11.8 N | 11.8 N | 11.8 N | 11.8 N | – | 11.8 N |
+
+It stops cleanly from every speed. Standing, it recovers from an 8° lean. Over a 70 s drive cycle with pushes it didn't fall on any of 3 seeds. It wobbles more than the two-motor version (0.3–1.2° lean jitter, versus 0.01°), which is the price of balancing through precession. Speed holding near 1 m/s (the critical speed) is the loosest.
+
+Caveats:
+
+- The gyro is unpowered, so a real one slowly loses speed to bearing friction and needs re-spinning; the simulated one does not decay.
+- The same measurement caveat as above applies (simulated state measurements, no rolling-contact estimator).
+- In the live viewer, pick "ROLLING hoop: ONE motor (hub) + passive gyro".
+
 ## Live interactive viewer
 
 `app/server.py` runs the real MuJoCo plant and the full estimator/controller in real time, and streams it to your browser:

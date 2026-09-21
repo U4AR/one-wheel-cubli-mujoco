@@ -24,6 +24,7 @@ from aiohttp import web, WSMsgType
 
 from cubli.live import LiveSim
 from cubli.live_rolling import LiveRolling
+from cubli.rolling_kane import gyro_design
 from cubli.params import NOMINAL
 from cubli.tunings import LATEST_FILE
 
@@ -33,6 +34,7 @@ PY = sys.executable
 
 pivot_sim = LiveSim()
 rolling_sim = None          # built on first use (~8 s: speed-scheduled controller)
+single_sim = None           # one-motor (hub + passive gyro) rolling hoop
 sim = pivot_sim
 clients: set = set()
 ctl = dict(paused=False, speed=1.0)
@@ -153,7 +155,7 @@ async def run_job(name, args):
 
 
 def handle(cmd):
-    global sim, rolling_sim
+    global sim, rolling_sim, single_sim
     c = cmd.get("cmd")
     if c == "pulse" and hasattr(sim, "kick"):
         sim.kick(cmd["preset"], float(cmd.get("force", 1.5)), float(cmd.get("duration", 0.05)))
@@ -209,6 +211,12 @@ def handle(cmd):
             if rolling_sim is None:
                 rolling_sim = LiveRolling()
             sim = rolling_sim
+            sim.reset((2.0, 0.0))
+            return dict(type="layout", layout=layout)
+        if layout == "rolling_single":
+            if single_sim is None:
+                single_sim = LiveRolling(rp=gyro_design())
+            sim = single_sim
             sim.reset((2.0, 0.0))
             return dict(type="layout", layout=layout)
         sim = pivot_sim

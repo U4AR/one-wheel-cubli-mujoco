@@ -40,6 +40,18 @@ class RollingParams:
     wheel_tilt: float = np.deg2rad(15)  # wheel axis tilted up out of the horizontal plane;
                                         # must exceed the housing pitch while braking
     hub_tau: float = 2.0       # N m, hub drive motor (hoop <-> housing) peak torque (ASSUMED)
+    # drive = "hub": reaction wheel + separate hub motor (2 motors)
+    # drive = "single": ONE floating motor between the hoop and the flywheel (a
+    #   differential through a bevel gear): its torque tau spins the flywheel (lean
+    #   balance, like a reaction wheel) AND turns the hoop about the axle with ratio
+    #   g_hoop (rolling speed), the hanging housing taking the reactions
+    drive: str = "hub"
+    g_hoop: float = 1.0
+    # drive = "gyro": ONE hub motor only; the flywheel is an unpowered gyroscope spinning
+    # at gyro_speed about the housing's vertical axis (wheel_tilt = 90 deg). Swinging the
+    # housing (pitch) with the hub motor makes the gyro precess -> sideways torque.
+    gyro_speed: float = 0.0
+    gyro_inertia: float = 1.0  # flywheel inertia scale (a passive gyro can be bigger)
     bearing_damping: float = 2e-3   # N m s/rad, hub bearing
     mu: float = 1.0            # floor sliding friction
     mu_roll: float = 2e-4      # rolling friction (m)
@@ -91,6 +103,19 @@ def build_xml(rp: RollingParams = RollingParams(), timestep=5e-4):
         for a, b in edges)
     imu = "\n".join(f'        <site name="imu{i}" pos="{x} {y} {z - 0.1}" size="0.006" rgba="0.1 0.8 0.2 1"/>'
                     for i, (x, y, z) in enumerate(IMU_POS))
+    if rp.drive == "gyro":
+        tendon = ""
+        actuators = f'    <motor name="hub" joint="axle" gear="1" ctrlrange="{-rp.hub_tau} {rp.hub_tau}"/>'
+    elif rp.drive == "single":
+        # differential: generalized force tau on the flywheel joint and g*tau on the
+        # axle joint (+housing / -hoop) -- one motor, reactions shared via the housing
+        tendon = (f'  <tendon><fixed name="diff"><joint joint="phi" coef="1"/>'
+                  f'<joint joint="axle" coef="{rp.g_hoop}"/></fixed></tendon>')
+        actuators = f'    <motor name="motor" tendon="diff" gear="1" ctrlrange="{-P.tau_peak} {P.tau_peak}"/>'
+    else:
+        tendon = ""
+        actuators = (f'    <motor name="motor" joint="phi" gear="1" ctrlrange="{-P.tau_peak} {P.tau_peak}"/>\n'
+                     f'    <motor name="hub" joint="axle" gear="1" ctrlrange="{-rp.hub_tau} {rp.hub_tau}"/>')
     return f"""
 <mujoco model="rolling_hoop">
   <compiler angle="radian" autolimits="true"/>
@@ -124,16 +149,16 @@ def build_xml(rp: RollingParams = RollingParams(), timestep=5e-4):
 {imu}
         <body name="wheel" pos="0 0 {zc}" quat="{wq}">
           <joint name="phi" type="hinge" axis="1 0 0"/>
-          <inertial pos="0 0 0" mass="{P.m_w}" diaginertia="{P.I_wx} {max(P.I_wy, 0.5 * P.I_wx * 1.0001)} {max(P.I_wy, 0.5 * P.I_wx * 1.0001)}"/>
+          <inertial pos="0 0 0" mass="{P.m_w}" diaginertia="{P.I_wx * rp.gyro_inertia} {max(P.I_wy, 0.5 * P.I_wx * 1.0001) * rp.gyro_inertia} {max(P.I_wy, 0.5 * P.I_wx * 1.0001) * rp.gyro_inertia}"/>
           <geom type="cylinder" fromto="0.012 0 0 0.024 0 0" size="0.068" material="wheel"/>
           <geom type="box" pos="0.0185 0 0.04" size="0.007 0.01 0.02" rgba="1 1 1 1"/>
         </body>
       </body>
     </body>
   </worldbody>
+{tendon}
   <actuator>
-    <motor name="motor" joint="phi" gear="1" ctrlrange="{-P.tau_peak} {P.tau_peak}"/>
-    <motor name="hub" joint="axle" gear="1" ctrlrange="{-rp.hub_tau} {rp.hub_tau}"/>
+{actuators}
   </actuator>
 </mujoco>
 """
