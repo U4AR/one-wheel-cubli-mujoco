@@ -25,7 +25,16 @@ IMU_POS = np.array([
 JOINTS = ["alpha", "beta", "gamma", "phi", "delta1", "delta2"]
 
 
-def build_xml(p: CubliParams = NOMINAL, timestep=5e-4) -> str:
+def build_xml(p: CubliParams = NOMINAL, timestep=5e-4, ground_limits=False) -> str:
+    """ground_limits: add joint limits where the real system would hit the floor
+    (an end mass at |beta| ~ 17 deg, a housing corner at |alpha| ~ 38 deg), so a
+    fall ends lying on the ground instead of rotating through it (viewer only)."""
+    if ground_limits:
+        lim_a = f'limited="true" range="{-np.deg2rad(38)} {np.deg2rad(38)}"'
+        lim_b = f'limited="true" range="{-np.deg2rad(17)} {np.deg2rad(17)}"'
+    else:
+        lim_a = lim_b = 'limited="false"'
+
     cx, cy = p.com_offset_xy
     # housing inertia about its CoM (parallel-axis theorem from the pivot values)
     Ihx = p.I_hx - p.m_h * (p.l_S**2 + cy**2)
@@ -79,8 +88,8 @@ def build_xml(p: CubliParams = NOMINAL, timestep=5e-4) -> str:
     <body name="target" pos="0 0 0.17"/>
     <geom name="floor" type="plane" size="3 3 0.1" material="grid" contype="0" conaffinity="0"/>
     <body name="housing" pos="0 0 0">
-      <joint name="alpha" type="hinge" axis="1 0 0" limited="false"/>
-      <joint name="beta"  type="hinge" axis="0 1 0" limited="false"/>
+      <joint name="alpha" type="hinge" axis="1 0 0" {lim_a} damping="0"/>
+      <joint name="beta"  type="hinge" axis="0 1 0" {lim_b}/>
       <joint name="gamma" type="hinge" axis="0 0 1" limited="false" damping="{p.yaw_damping}"/>
       <inertial pos="{cx} {cy} {p.l_S}" mass="{p.m_h}" diaginertia="{Ihx} {Ihy} {Ihz}"/>
       <!-- visuals only (inertial above overrides geom mass) -->
@@ -120,7 +129,7 @@ def build_xml(p: CubliParams = NOMINAL, timestep=5e-4) -> str:
 """
 
 
-def load(p: CubliParams = NOMINAL, timestep=5e-4):
-    m = mujoco.MjModel.from_xml_string(build_xml(p, timestep))
+def load(p: CubliParams = NOMINAL, timestep=5e-4, ground_limits=False):
+    m = mujoco.MjModel.from_xml_string(build_xml(p, timestep, ground_limits))
     d = mujoco.MjData(m)
     return m, d

@@ -6,3 +6,5 @@ cma
 imageio
 imageio-ffmpeg
 pytest
+aiohttp
+pillow

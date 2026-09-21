@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One-Wheel Cubli · live</title>
+<style>
+  :root {
+    --bg: #121211; --panel: #1a1a19; --panel2: #222220; --line: #33322f;
+    --ink: #ffffff; --ink2: #c3c2b7; --ink3: #8d8c84;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --good: #2fa05a; --bad: #e66767; --accent: #3987e5;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+  header .sub { color: var(--ink3); font-size: 12px; }
+  .pill { padding: 3px 10px; border-radius: 99px; font-weight: 650; font-size: 12px; background: var(--panel2); }
+  .pill.ok { color: #fff; background: #1f5f3a; } .pill.bad { color: #fff; background: #7a2a2a; } .pill.paused { background: #5a4a14; }
+  .spacer { flex: 1; }
+  .conn { color: var(--ink3); font-size: 12px; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; padding: 14px 16px; }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+  .viewer { position: relative; background: #000; border-radius: 10px; overflow: hidden; aspect-ratio: 16 / 9; border: 1px solid var(--line); }
+  .viewer canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  .viewer canvas.grabbing { cursor: crosshair; }
+  .hud { position: absolute; left: 10px; top: 8px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: #fff; text-shadow: 0 1px 2px #000; pointer-events: none; }
+  .hint { position: absolute; right: 10px; bottom: 8px; font-size: 11.5px; color: #ddd; background: rgba(0,0,0,.45); padding: 4px 8px; border-radius: 6px; pointer-events: none; }
+  .banner { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  .banner div { background: rgba(122,42,42,.85); padding: 10px 18px; border-radius: 8px; font-weight: 650; pointer-events: auto; }
+  .banner button { margin-left: 10px; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  @media (max-width: 700px) { .charts { grid-template-columns: 1fr; } }
+  .chart { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px 6px; }
+  .chart h3 { margin: 0 0 4px; font-size: 12px; color: var(--ink2); font-weight: 600; display: flex; gap: 12px; align-items: center; }
+  .chart h3 .key { display: inline-flex; align-items: center; gap: 5px; font-weight: 500; color: var(--ink2); }
+  .chart h3 .sw { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+  .chart canvas { width: 100%; height: 130px; display: block; }
+  aside { display: flex; flex-direction: column; gap: 10px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--ink3); margin: 0 0 8px; font-weight: 650; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; align-items: center; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+  button { background: var(--panel2); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; font: inherit; cursor: pointer; }
+  button:hover { border-color: #55544f; } button:active { transform: translateY(1px); }
+  button.primary { background: #23446e; border-color: #2f5b93; }
+  button.danger { background: #5a2323; border-color: #7a2a2a; }
+  button:disabled { opacity: .45; cursor: default; }
+  kbd { font: 10.5px ui-monospace, monospace; color: var(--ink3); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+  label.sl { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin-bottom: 7px; color: var(--ink2); }
+  label.sl input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+  label.sl output { font: 12px ui-monospace, monospace; color: var(--ink); }
+  select { background: var(--panel2); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 5px 6px; font: inherit; }
+  .check { display: flex; align-items: center; gap: 6px; color: var(--ink2); margin-bottom: 6px; }
+  .readout { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font: 12px ui-monospace, monospace; }
+  .readout span:nth-child(odd) { color: var(--ink3); font-family: system-ui, sans-serif; }
+  .log { background: #0e0e0d; border: 1px solid var(--line); border-radius: 7px; height: 150px; overflow: auto; font: 11px/1.45 ui-monospace, monospace; color: var(--ink2); padding: 6px 8px; white-space: pre-wrap; }
+  .muted { color: var(--ink3); font-size: 12px; }
+  details summary { cursor: pointer; color: var(--ink2); margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>One-Wheel Cubli</h1>
+  <span class="sub">MuJoCo · LQR + delay-compensating Kalman filter · live</span>
+  <span id="status" class="pill">connecting…</span>
+  <span class="spacer"></span>
+  <span class="conn" id="conn"></span>
+</header>
+
+<main>
+  <section>
+    <div class="viewer" id="viewer">
+      <canvas id="view" width="960" height="540"></canvas>
+      <div class="hud" id="hud"></div>
+      <div class="hint">drag: orbit · wheel: zoom · <b>shift+drag</b> (or Grab mode): pull any part</div>
+      <div class="banner" id="fellBanner" hidden><div>It fell. <button id="fellReset" class="primary">Reset <kbd>R</kbd></button></div></div>
+    </div>
+
+    <div class="charts">
+      <div class="chart"><h3>Tilt [deg] <span class="key"><i class="sw" style="background:var(--s1)"></i>α roll</span><span class="key"><i class="sw" style="background:var(--s2)"></i>β pitch</span></h3><canvas id="cTilt"></canvas></div>
+      <div class="chart"><h3>Motor torque [N m] <span class="key"><i class="sw" style="background:var(--s3)"></i>torque</span><span class="key"><i class="sw" style="background:#55544f"></i>available</span></h3><canvas id="cTorque"></canvas></div>
+      <div class="chart"><h3>Wheel speed [rad/s]</h3><canvas id="cWheel"></canvas></div>
+      <div class="chart"><h3>Motor I²t heat [% of budget]</h3><canvas id="cHeat"></canvas></div>
+    </div>
+
+    <div class="panel" style="margin-top:12px">
+      <h2>Runs &amp; progress</h2>
+      <div class="row">
+        <button id="jobTune" class="primary">Run CMA-ES tuning</button>
+        <label class="muted">gens <input id="tuneGens" type="number" value="10" min="1" max="200" style="width:52px"></label>
+        <label class="muted">pop <input id="tunePop" type="number" value="24" min="4" max="64" style="width:52px"></label>
+        <button id="jobBench">Run benchmark</button>
+        <button id="jobTests">Run tests</button>
+        <button id="jobStop" class="danger" disabled>Stop</button>
+        <span class="muted" id="jobStatus">idle</span>
+      </div>
+      <div class="charts" style="margin-top:6px">
+        <div class="chart"><h3>Tuning cost per generation (lower is better) <span class="key"><i class="sw" style="background:var(--s4)"></i>shipped run</span><span class="key"><i class="sw" style="background:var(--s1)"></i>this run</span></h3><canvas id="cTune"></canvas></div>
+        <div><div class="log" id="log">No job output yet. Runs you start here stream their output live.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="panel">
+      <h2>Disturb</h2>
+      <div class="grid2">
+        <button data-p="drop_left">Drop on left mass<kbd>Q</kbd></button>
+        <button data-p="drop_right">Drop on right mass<kbd>E</kbd></button>
+        <button data-p="push_ny">Push housing ←<kbd>←</kbd></button>
+        <button data-p="push_py">Push housing →<kbd>→</kbd></button>
+        <button data-p="push_px">Push housing ↑<kbd>↑</kbd></button>
+        <button data-p="push_nx">Push housing ↓<kbd>↓</kbd></button>
+      </div>
+      <div class="row"><button data-p="twist">Sideways tap on mass<kbd>T</kbd></button></div>
+      <label class="sl">Force <output id="oForce"></output><input id="force" type="range" min="0.2" max="15" step="0.1" value="1.5"></label>
+      <label class="sl">Duration <output id="oDur"></output><input id="dur" type="range" min="10" max="300" step="5" value="50"></label>
+      <div class="muted">For scale: ~2.1–2.4 N for 50 ms on an end mass is the most it can recover from. The housing tolerates ~9–10 N.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Grab</h2>
+      <div class="check"><input type="checkbox" id="grabMode"><label for="grabMode">Grab mode (plain drag pulls instead of orbiting)</label></div>
+      <label class="sl">Spring stiffness <output id="oK"></output><input id="gk" type="range" min="2" max="60" step="1" value="15"></label>
+      <div class="muted" id="grabInfo">Not grabbing</div>
+    </div>
+
+    <div class="panel">
+      <h2>Simulation</h2>
+      <div class="row">
+        <button id="pause">Pause<kbd>Space</kbd></button>
+        <button id="reset" class="primary">Reset<kbd>R</kbd></button>
+        <button id="cam">Camera</button>
+      </div>
+      <label class="sl">Speed <output id="oSpeed"></output><input id="speed" type="range" min="0.05" max="1.5" step="0.05" value="1"></label>
+      <div class="grid2">
+        <label class="sl">Initial α <output id="oTa"></output><input id="ta" type="range" min="-10" max="10" step="0.5" value="2"></label>
+        <label class="sl">Initial β <output id="oTb"></output><input id="tb" type="range" min="-10" max="10" step="0.5" value="-1.5"></label>
+      </div>
+      <div class="check"><input type="checkbox" id="ctrlOn" checked><label for="ctrlOn">Controller on (untick to watch it fall)</label></div>
+    </div>
+
+    <div class="panel">
+      <h2>Controller</h2>
+      <div class="row">
+        <label class="muted">Weights</label>
+        <select id="tuning">
+          <option value="tuned">CMA-ES tuned</option>
+          <option value="paper">paper (Eq. 23–24)</option>
+          <option value="latest-run" id="optLatest" disabled>latest run from this page</option>
+        </select>
+      </div>
+      <div class="check"><input type="checkbox" id="com" checked><label for="com">CoM-offset estimator</label></div>
+      <label class="sl">Sensor noise × <output id="oNoise"></output><input id="noise" type="range" min="0" max="5" step="0.25" value="1"></label>
+      <div class="row"><label class="muted">Measurement delay</label>
+        <select id="delay"><option value="1">1 step (10 ms, paper)</option><option value="2">2 steps</option><option value="3">3 steps</option><option value="4">4 steps</option></select>
+      </div>
+      <div class="muted">Applied live. The physical state is kept and only the estimator/controller restarts.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Plant (physics)</h2>
+      <label class="sl">End mass each [kg] <output id="oMe"></output><input id="me" type="range" min="0.15" max="0.5" step="0.01" value="0.304"></label>
+      <label class="sl">Beam frequency f0 [Hz] <output id="oFb"></output><input id="fb" type="range" min="20" max="120" step="0.5" value="57.2"></label>
+      <label class="sl">CoM offset toward motor [mm] <output id="oCom"></output><input id="comoff" type="range" min="0" max="8" step="0.5" value="2"></label>
+      <div class="row"><button id="applyPlant" class="primary">Apply &amp; reset</button><button id="plantDefault">Paper values</button></div>
+      <div class="muted">The controller always assumes the paper's CAD model, so this is a model-mismatch test.</div>
+    </div>
+
+    <div class="panel">
+      <h2>State</h2>
+      <div class="readout" id="readout"></div>
+    </div>
+  </aside>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const view = $("view"), vctx = view.getContext("2d");
+let ws, grabbing = false, orbiting = false, lastMouse = null, lastSend = 0;
+let state = null, paused = false;
+
+// ---------------------------------------------------------------- data buffers
+const WINDOW = 10;          // seconds shown in the charts
+const buf = { t: [], a: [], b: [], u: [], lim: [], w: [], heat: [] };
+function push(s) {
+  if (buf.t.length && s[0] < buf.t[buf.t.length - 1]) for (const k in buf) buf[k].length = 0;  // reset
+  buf.t.push(s[0]); buf.a.push(s[1]); buf.b.push(s[2]); buf.u.push(s[3]);
+  buf.lim.push(s[4]); buf.w.push(s[5]); buf.heat.push(s[6]);
+  while (buf.t.length && buf.t[0] < s[0] - WINDOW) for (const k in buf) buf[k].shift();
+}
+let pastTune = [], liveTune = [];
+
+// ---------------------------------------------------------------- charts
+function setupCanvas(c) {
+  const dpr = window.devicePixelRatio || 1, r = c.getBoundingClientRect();
+  if (c.width !== Math.round(r.width * dpr)) { c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); }
+  const ctx = c.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return [ctx, r.width, r.height];
+}
+function niceTicks(lo, hi, n = 4) {
+  const span = hi - lo, step0 = span / n, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= step0) || mag * 10;
+  const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(10));
+  return out;
+}
+function drawChart(c, x, series, opt = {}) {
+  const [ctx, W, H] = setupCanvas(c);
+  ctx.clearRect(0, 0, W, H);
+  const L = 44, R = 8, T = 6, B = 18;
+  if (!x.length) return;
+  const x1 = opt.xmax ?? x[x.length - 1], x0 = opt.xmin ?? Math.min(x[0], x1 - WINDOW);
+  let lo = Infinity, hi = -Infinity;
+  for (const s of series) for (const v of s.y) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  if (opt.band) for (const v of opt.band) { lo = Math.min(lo, -v); hi = Math.max(hi, v); }
+  const minSpan = opt.minSpan ?? 1;
+  if (hi - lo < minSpan) { const m = (hi + lo) / 2; lo = m - minSpan / 2; hi = m + minSpan / 2; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  if (opt.clamp) { lo = Math.max(lo, opt.clamp[0]); hi = Math.min(hi, opt.clamp[1]); }
+  const X = v => L + (v - x0) / (x1 - x0 || 1) * (W - L - R), Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  ctx.font = "10.5px system-ui, sans-serif"; ctx.fillStyle = css("--ink3"); ctx.strokeStyle = css("--line"); ctx.lineWidth = 1;
+  for (const v of niceTicks(lo, hi)) {
+    const y = Math.round(Y(v)) + .5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W - R, y); ctx.stroke();
+    ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText(+v.toFixed(3), L - 6, y);
+  }
+  if (lo < 0 && hi > 0) { ctx.strokeStyle = "#4a4945"; const y = Math.round(Y(0)) + .5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W - R, y); ctx.stroke(); }
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (const v of niceTicks(x0, x1, 5)) ctx.fillText(opt.xfmt ? opt.xfmt(v) : v.toFixed(0) + (opt.xunit ?? " s"), X(v), H - B + 4);
+  if (opt.band) {          // symmetric +/- limit band
+    ctx.fillStyle = "rgba(120,119,112,.18)"; ctx.beginPath();
+    x.forEach((t, i) => i ? ctx.lineTo(X(t), Y(opt.band[i])) : ctx.moveTo(X(t), Y(opt.band[i])));
+    for (let i = x.length - 1; i >= 0; i--) ctx.lineTo(X(x[i]), Y(-opt.band[i]));
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.save(); ctx.beginPath(); ctx.rect(L, T, W - L - R, H - T - B); ctx.clip();
+  for (const s of series) {
+    ctx.strokeStyle = s.color; ctx.lineWidth = s.width ?? 1.6; ctx.lineJoin = "round"; ctx.beginPath();
+    s.y.forEach((v, i) => i ? ctx.lineTo(X(s.x ? s.x[i] : x[i]), Y(v)) : ctx.moveTo(X(s.x ? s.x[i] : x[i]), Y(v)));
+    ctx.stroke();
+    if (s.dots) { ctx.fillStyle = s.color; s.y.forEach((v, i) => { ctx.beginPath(); ctx.arc(X(s.x[i]), Y(v), 2.5, 0, 7); ctx.fill(); }); }
+  }
+  ctx.restore();
+}
+function drawAll() {
+  const t = buf.t;
+  drawChart($("cTilt"), t, [{ y: buf.a, color: css("--s1") }, { y: buf.b, color: css("--s2") }], { minSpan: 1 });
+  drawChart($("cTorque"), t, [{ y: buf.u, color: css("--s3") }], { band: buf.lim, minSpan: 0.4, clamp: [-3.6, 3.6] });
+  drawChart($("cWheel"), t, [{ y: buf.w, color: css("--s1") }], { minSpan: 20 });
+  drawChart($("cHeat"), t, [{ y: buf.heat, color: css("--s2") }], { minSpan: 5, clamp: [0, 110] });
+  const tx = [...pastTune.map(r => r[0]), ...liveTune.map(r => r[0])];
+  if (tx.length) {
+    const ser = [];
+    if (pastTune.length) ser.push({ x: pastTune.map(r => r[0]), y: pastTune.map(r => r[1]), color: css("--s4"), dots: true });
+    if (liveTune.length) ser.push({ x: liveTune.map(r => r[0]), y: liveTune.map(r => r[1]), color: css("--s1"), dots: true });
+    drawChart($("cTune"), tx, ser, { xmin: 0, xmax: Math.max(...tx, 1), xunit: "", xfmt: v => "gen " + v.toFixed(0), minSpan: 0.1 });
+  }
+  requestAnimationFrame(drawAll);
+}
+requestAnimationFrame(drawAll);
+
+// ---------------------------------------------------------------- websocket
+function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+function connect() {
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws.binaryType = "blob";
+  ws.onopen = () => { $("conn").textContent = "connected"; };
+  ws.onclose = () => { $("conn").textContent = "disconnected, retrying…"; setStatus("offline", ""); setTimeout(connect, 1000); };
+  let frames = 0, fpsT = performance.now(), fps = 0;
+  ws.onmessage = async (ev) => {
+    if (ev.data instanceof Blob) {
+      const bmp = await createImageBitmap(ev.data);
+      vctx.drawImage(bmp, 0, 0, view.width, view.height); bmp.close();
+      frames++; const now = performance.now();
+      if (now - fpsT > 1000) { fps = frames * 1000 / (now - fpsT); frames = 0; fpsT = now; $("conn").textContent = `connected · ${fps.toFixed(0)} fps`; }
+      return;
+    }
+    const m = JSON.parse(ev.data);
+    if (m.type === "telemetry") onTelemetry(m);
+    else if (m.type === "hello") { pastTune = m.past_tune || []; if (m.log && m.log.length) $("log").textContent = m.log.join("\n"); }
+    else if (m.type === "job") onJob(m);
+    else if (m.type === "log") { appendLog(m.line); if (m.tune) liveTune.push(m.tune); }
+    else if (m.type === "grabbed") $("grabInfo").textContent = m.body ? `Grabbed: ${m.body}` : "Nothing under the cursor";
+    else if (m.type === "error") appendLog("[error] " + m.message);
+  };
+}
+function setStatus(txt, cls) { const s = $("status"); s.textContent = txt; s.className = "pill " + cls; }
+function onTelemetry(m) {
+  for (const s of m.samples) push(s);
+  state = m.state; paused = m.paused;
+  $("pause").firstChild.textContent = paused ? "Resume" : "Pause";
+  if (!state.controller_on) setStatus("CONTROLLER OFF", "bad");
+  else if (state.fell) setStatus("FELL", "bad");
+  else if (paused) setStatus("PAUSED", "paused");
+  else setStatus("BALANCING", "ok");
+  $("fellBanner").hidden = !state.fell;
+  const L = buf.t.length - 1;
+  if (L >= 0) {
+    $("hud").innerHTML = `t = ${state.t.toFixed(2)} s   ×${m.speed.toFixed(2)}<br>α ${buf.a[L].toFixed(2)}°   β ${buf.b[L].toFixed(2)}°<br>τ ${buf.u[L].toFixed(2)} N m   ω ${buf.w[L].toFixed(0)} rad/s` +
+      (m.grab != null ? `<br><span style="color:#6fe0ff">grab force ${m.grab.toFixed(1)} N</span>` : "");
+    $("readout").innerHTML = [
+      ["time", state.t.toFixed(2) + " s"], ["roll α", buf.a[L].toFixed(3) + "°"], ["pitch β", buf.b[L].toFixed(3) + "°"],
+      ["yaw γ", state.gamma_deg.toFixed(2) + "°"], ["torque", buf.u[L].toFixed(3) + " N m"],
+      ["available", buf.lim[L].toFixed(2) + " N m"], ["wheel", buf.w[L].toFixed(1) + " rad/s"],
+      ["I²t", buf.heat[L].toFixed(1) + " %"], ["CoM estimate", state.com_est_deg.map(v => v.toFixed(2) + "°").join(", ")],
+      ["beam δ1, δ2", state.beam_mrad.map(v => v.toFixed(3)).join(", ") + " mrad"],
+      ["weights", state.tuning], ["plant", `mₑ ${state.plant.m_e.toFixed(3)} kg, f0 ${state.plant.f_beam.toFixed(1)} Hz, CoM ${state.plant.com_offset_mm.toFixed(1)} mm`],
+    ].map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join("");
+  }
+  if (m.grab == null && !grabbing) $("grabInfo").textContent = "Not grabbing";
+}
+function appendLog(line) {
+  const el = $("log"); const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+  if (el.dataset.fresh !== "1") { el.textContent = ""; el.dataset.fresh = "1"; }
+  el.textContent += (el.textContent ? "\n" : "") + line;
+  if (el.textContent.length > 60000) el.textContent = el.textContent.slice(-40000);
+  if (atBottom) el.scrollTop = el.scrollHeight;
+}
+function onJob(m) {
+  const running = m.running;
+  ["jobTune", "jobBench", "jobTests"].forEach(id => $(id).disabled = running);
+  $("jobStop").disabled = !running;
+  $("jobStatus").textContent = running ? `running: ${m.name}…` : (m.name ? `finished: ${m.name}` : "idle");
+  if (m.tune) liveTune = m.tune;
+  $("optLatest").disabled = !m.latest_available;
+}
+
+// ---------------------------------------------------------------- controls
+const outs = [["force", "oForce", v => v + " N"], ["dur", "oDur", v => v + " ms"], ["gk", "oK", v => v + " N/m"],
+  ["speed", "oSpeed", v => "×" + (+v).toFixed(2)], ["ta", "oTa", v => v + "°"], ["tb", "oTb", v => v + "°"],
+  ["noise", "oNoise", v => (+v).toFixed(2)], ["me", "oMe", v => (+v).toFixed(3)], ["fb", "oFb", v => (+v).toFixed(1)],
+  ["comoff", "oCom", v => (+v).toFixed(1)]];
+for (const [i, o, f] of outs) { const upd = () => $(o).textContent = f($(i).value); $(i).addEventListener("input", upd); upd(); }
+
+function pulse(p) { send({ cmd: "pulse", preset: p, force: +$("force").value, duration: $("dur").value / 1000 }); }
+document.querySelectorAll("[data-p]").forEach(b => b.onclick = () => pulse(b.dataset.p));
+$("pause").onclick = () => send({ cmd: "pause", value: !paused });
+const doReset = () => { buf.t.length = 0; for (const k in buf) buf[k].length = 0; send({ cmd: "reset", tilt: [+$("ta").value, +$("tb").value] }); };
+$("reset").onclick = doReset; $("fellReset").onclick = doReset;
+$("cam").onclick = () => send({ cmd: "camera_reset" });
+$("speed").oninput = () => send({ cmd: "speed", value: +$("speed").value });
+$("ctrlOn").onchange = () => send({ cmd: "controller", value: $("ctrlOn").checked });
+const sendSettings = () => send({ cmd: "settings", tuning: $("tuning").value, com_enable: $("com").checked, noise: +$("noise").value, delay: +$("delay").value });
+["tuning", "com", "delay"].forEach(id => $(id).onchange = sendSettings);
+$("noise").onchange = sendSettings;
+$("applyPlant").onclick = () => { for (const k in buf) buf[k].length = 0; send({ cmd: "plant", m_e: +$("me").value, f_beam: +$("fb").value, com_mm: +$("comoff").value }); };
+$("plantDefault").onclick = () => { $("me").value = 0.304; $("fb").value = 57.2; $("comoff").value = 2; $("me").dispatchEvent(new Event("input")); $("fb").dispatchEvent(new Event("input")); $("comoff").dispatchEvent(new Event("input")); };
+$("jobTune").onclick = () => { liveTune = []; send({ cmd: "job", name: "tune", gens: +$("tuneGens").value, pop: +$("tunePop").value, warm: true }); };
+$("jobBench").onclick = () => send({ cmd: "job", name: "benchmark" });
+$("jobTests").onclick = () => send({ cmd: "job", name: "tests" });
+$("jobStop").onclick = () => send({ cmd: "job_stop" });
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  const map = { ArrowLeft: "push_ny", ArrowRight: "push_py", ArrowUp: "push_px", ArrowDown: "push_nx", q: "drop_left", e: "drop_right", t: "twist" };
+  if (map[e.key]) { pulse(map[e.key]); e.preventDefault(); }
+  else if (e.key === " ") { send({ cmd: "pause", value: !paused }); e.preventDefault(); }
+  else if (e.key === "r") doReset();
+});
+
+// ---------------------------------------------------------------- mouse on the viewer
+function rel(e) { const r = view.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; }
+view.addEventListener("pointerdown", (e) => {
+  view.setPointerCapture(e.pointerId);
+  const [x, y] = rel(e);
+  if (e.shiftKey || $("grabMode").checked) { grabbing = true; view.classList.add("grabbing"); send({ cmd: "grab_start", x, y }); }
+  else orbiting = true;
+  lastMouse = [x, y];
+});
+view.addEventListener("pointermove", (e) => {
+  if (!grabbing && !orbiting) return;
+  const now = performance.now(); if (now - lastSend < 16) return; lastSend = now;
+  const [x, y] = rel(e);
+  if (grabbing) send({ cmd: "grab_move", x, y, k: +$("gk").value });
+  else { send({ cmd: "orbit", dx: x - lastMouse[0], dy: y - lastMouse[1] }); lastMouse = [x, y]; }
+});
+const endPtr = () => { if (grabbing) send({ cmd: "grab_end" }); grabbing = orbiting = false; view.classList.remove("grabbing"); };
+view.addEventListener("pointerup", endPtr); view.addEventListener("pointercancel", endPtr);
+view.addEventListener("wheel", (e) => { send({ cmd: "zoom", delta: e.deltaY }); e.preventDefault(); }, { passive: false });
+
+connect();
+</script>
+</body>
+</html>

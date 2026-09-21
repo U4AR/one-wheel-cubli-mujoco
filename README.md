@@ -131,6 +131,25 @@ Interactive viewer:
 python -c "import mujoco.viewer; from cubli.model import load; m, d = load(); mujoco.viewer.launch(m, d)"
 ```
 
+## Live interactive viewer
+
+`app/server.py` runs the real MuJoCo plant and the full estimator/controller in real time, and streams it to your browser:
+
+- a live 3D view: drag to orbit, scroll to zoom, **shift+drag (or Grab mode) to pull on any part** with a spring force;
+- disturbance buttons and keys (drops on the end masses, pushes on the housing) with adjustable force and duration;
+- live charts of tilt, motor torque against the available-torque envelope, wheel speed and I²t heating;
+- live switching between paper and tuned weights, CoM estimator on/off, sensor-noise level and measurement delay;
+- plant changes (end mass, beam frequency, CoM offset), applied as a model-mismatch test;
+- a "Runs & progress" panel that launches CMA-ES tuning, the benchmark or the tests and streams their progress, including a cost-per-generation chart.
+
+```bash
+MUJOCO_GL=egl python app/server.py      # serves http://127.0.0.1:8765
+# on a remote machine, forward the port from your laptop first:
+ssh -L 8765:localhost:8765 <user>@<host>
+```
+
+Keys: `Q`/`E` drop on the left/right mass, arrows push the housing, `T` taps an end mass sideways, `Space` pauses, `R` resets. The server listens on localhost only.
+
 ## Layout
 
 ```
@@ -141,6 +160,8 @@ cubli/controller.py  IMU fusion, complementary filter, delay-KF, LQR, CoM estima
 cubli/sim.py         closed loop: plant, sensors, delay, motor envelope + I²t
 cubli/evaluate.py    benchmark scenarios, metrics, tuning objective
 cubli/tunings.py     "paper" and "tuned" controller settings
+cubli/live.py        step-wise interactive simulation for the viewer
+app/                 live web viewer (aiohttp server + single-page UI)
 scripts/             tuning, figures, video
 tests/               replication checks
 ```

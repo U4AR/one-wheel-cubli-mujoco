@@ -10,6 +10,8 @@ NAMES = ([f"Q_{n}" for n in ["a", "ad", "b", "bd", "w", "d1", "d1d", "d2", "d2d"
             "W_angle", "W_rate", "W_wheel", "comp_w_acc", "com_tau"])
 
 TUNED_FILE = os.path.join(os.path.dirname(__file__), "tuned_params.json")
+# written by tuning runs started from the live viewer
+LATEST_FILE = os.path.join(os.path.dirname(__file__), "..", "results", "tuned_params_ui.json")
 
 
 def to_tuning(z):
@@ -33,4 +35,6 @@ def get(name="tuned"):
         return Tuning()
     if name == "tuned":
         return to_tuning(json.load(open(TUNED_FILE))["z"])
+    if name == "latest-run":
+        return to_tuning(json.load(open(LATEST_FILE))["z"])
     raise ValueError(name)
