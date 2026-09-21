@@ -29,6 +29,17 @@ class CubliParams:
     ring_center: float = 0.0  # m, height of the hoop centre above the pivot
     core_raise: float = 0.0   # m, housing (+wheel, IMUs) raised above the pivot
     ring_weights: float = 0.0 # kg, each of two point masses on the hoop at 3 and 9 o'clock
+    core_extra_mass: float = 0.0  # kg, extra motor mass in the housing (at the wheel centre)
+
+    def scaled_actuator(self, k_motor=1.0, k_wheel=1.0, motor_mass=0.36):
+        """Bigger motor (torques x k_motor, motor mass grows proportionally) and
+        heavier flywheel (inertia and mass x k_wheel, same radius)."""
+        return self.with_(tau_peak=self.tau_peak * k_motor, tau_cont=self.tau_cont * k_motor,
+                          tau_stall=self.tau_stall * k_motor,
+                          i2t_budget=self.i2t_budget * k_motor**2,
+                          core_extra_mass=motor_mass * (k_motor - 1.0),
+                          m_w=self.m_w * k_wheel, I_wx=self.I_wx * k_wheel,
+                          I_wy=self.I_wy * k_wheel, I_wz=self.I_wz * k_wheel)
 
     # masses (kg)
     m_h: float = 1.101        # housing (incl. motor, electronics, beam)
@@ -87,7 +98,7 @@ class CubliParams:
     def m_total(self):
         if self.layout == "ring":
             return (self.housing_without_tube()[0] + self.m_w + self.ring_mass
-                    + 2 * self.ring_weights)
+                    + 2 * self.ring_weights + self.core_extra_mass)
         return self.m_h + self.m_w + 2 * self.m_e
 
     def beam_freq_hz(self, l_free=0.523):

@@ -206,6 +206,18 @@ With nearly equal tilt frequencies, the single wheel can barely tell the two dir
 
 All three layouts can be picked in the live viewer (Plant → Layout).
 
+**Bigger motor for hoop A?** (`scripts/ring_bigmotor.py`) I scaled the motor ×2–10 (torque, and its mass: +0.36 kg per ×1) and the flywheel ×1–8 (inertia and mass), re-searching 81 LQR weightings per size. **Nothing balanced.** Taking the problem apart:
+
+| actuator | sensors | result |
+|---|---|---|
+| unlimited torque and speed, no added mass | perfect | recovers from ≤ 0.3° (needs 30 N m peaks and 9° swings). From 1°, it swings to 24° and falls even with 99 N m |
+| unlimited, no added mass | MPU-6050 class (as the paper) | falls (2/3 seeds; 3/3 with the 2 mm CoM offset) |
+| unlimited, no added mass | 10–100× better | balances |
+| real ×10 motor + ×10 flywheel (+5.5 kg at the hoop centre) | 10–100× better | falls: the added central mass pushes ε even closer to 1 |
+| massless 7–34 N m motor with 2000 rad/s no-load speed | 10× better | balances on some seeds only, wheel at 760–1000 rad/s |
+
+The hoop's tilt frequencies are nearly equal (ε = 0.91), so correcting a small error in the weakly controllable direction takes seconds of large, coordinated swings (25–65× the error). That makes the hoop hypersensitive to sensor error, and a heavier actuator at the centre makes ε worse. A bigger motor is not the fix. The fix is restoring the inertia asymmetry (flattened hoop, or a hoop on a post).
+
 ## Live interactive viewer
 
 `app/server.py` runs the real MuJoCo plant and the full estimator/controller in real time, and streams it to your browser:

@@ -105,6 +105,12 @@ def build_xml(p: CubliParams = NOMINAL, timestep=5e-4, ground_limits=False) -> s
       </body>"""
     tip_geom = (f'      <geom type="capsule" fromto="0 0 0.004 0 0 {zr + 0.06}" size="0.006" material="alu" contype="0" conaffinity="0"/>'
                 if zr > 0 else "")
+    extra_body = ""
+    if p.core_extra_mass > 0:   # bigger motor: extra mass at the wheel centre
+        me = p.core_extra_mass
+        extra_body = (f'        <body name="motor_extra" pos="0 0 {p.l_P}">\n'
+                      f'          <inertial pos="0 0 0" mass="{me}" diaginertia="{me * 1e-3} {me * 1e-3} {me * 1e-3}"/>\n'
+                      f'        </body>')
     target_z = max(0.17, (p.ring_center * 0.8) if ring else 0.17)
     imu_sites = "\n".join(
         f'          <site name="imu{i}" pos="{x} {y} {z}" size="0.006" rgba="0.1 0.8 0.2 1"/>'
@@ -151,6 +157,7 @@ def build_xml(p: CubliParams = NOMINAL, timestep=5e-4, ground_limits=False) -> s
         <geom type="cylinder" fromto="0 0 {p.l_Q-0.02} 0 0 {p.l_Q+0.005}" size="0.018" material="alu" contype="0" conaffinity="0"/>
         <geom type="box" pos="0 0 {p.l_P}" size="0.003 0.05 0.05" quat="{wq}" material="alu" contype="0" conaffinity="0"/>
 {imu_sites}
+{extra_body}
         <body name="wheel" pos="0 0 {p.l_P}" quat="{wheel_q}">
           <joint name="phi" type="hinge" axis="1 0 0" limited="false"/>
           <inertial pos="0 {p.wheel_ecc} 0" mass="{p.m_w}" diaginertia="{p.I_wx} {Iwt} {Iwt}"/>
