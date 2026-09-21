@@ -8,3 +8,4 @@ imageio-ffmpeg
 pytest
 aiohttp
 pillow
+sympy

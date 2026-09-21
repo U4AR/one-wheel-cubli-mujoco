@@ -1,0 +1,47 @@
+{
+ "standing": {
+  "balances": true,
+  "lean_jitter_deg": 0.012,
+  "recovers_from_lean_deg": 12,
+  "forward_kick_rolls_m": 2.92,
+  "stays_up_after_kick": true
+ },
+ "max_side_push_N": {
+  "paper wheel (45 deg)": {
+   "-3.0": 10.1,
+   "-2.0": null,
+   "-1.0": null,
+   "-0.5": null,
+   "0.0": 11.8,
+   "0.5": 2.8,
+   "1.0": null,
+   "1.5": null,
+   "2.0": null,
+   "3.0": 11.8
+  },
+  "lean-axis wheel": {
+   "-3.0": 11.8,
+   "-2.0": null,
+   "-1.0": 8.2,
+   "-0.5": 11.8,
+   "0.0": 11.8,
+   "0.5": 11.8,
+   "1.0": 8.2,
+   "1.5": null,
+   "2.0": null,
+   "3.0": 11.8
+  },
+  "lean-axis wheel, tilted 7 deg (final)": {
+   "-3.0": null,
+   "-2.0": null,
+   "-1.0": null,
+   "-0.5": 11.8,
+   "0.0": 11.8,
+   "0.5": 11.8,
+   "1.0": 11.8,
+   "1.5": 11.8,
+   "2.0": 11.8,
+   "3.0": 11.8
+  }
+ }
+}

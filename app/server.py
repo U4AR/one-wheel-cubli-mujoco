@@ -23,6 +23,7 @@ import numpy as np
 from aiohttp import web, WSMsgType
 
 from cubli.live import LiveSim
+from cubli.live_rolling import LiveRolling
 from cubli.params import NOMINAL
 from cubli.tunings import LATEST_FILE
 
@@ -30,7 +31,9 @@ HOST, PORT = os.environ.get("CUBLI_HOST", "127.0.0.1"), int(os.environ.get("CUBL
 FPS = 30
 PY = sys.executable
 
-sim = LiveSim()
+pivot_sim = LiveSim()
+rolling_sim = None          # built on first use (~8 s: speed-scheduled controller)
+sim = pivot_sim
 clients: set = set()
 ctl = dict(paused=False, speed=1.0)
 job = dict(proc=None, name=None, lines=deque(maxlen=400), tune=[])
@@ -150,8 +153,13 @@ async def run_job(name, args):
 
 
 def handle(cmd):
+    global sim, rolling_sim
     c = cmd.get("cmd")
-    if c == "pulse":
+    if c == "pulse" and hasattr(sim, "kick"):
+        sim.kick(cmd["preset"], float(cmd.get("force", 1.5)), float(cmd.get("duration", 0.05)))
+    elif c == "launch" and hasattr(sim, "launch"):
+        sim.launch(float(cmd.get("speed", 1.0)))
+    elif c == "pulse":
         body, direction = PRESETS[cmd["preset"]]
         F = float(cmd.get("force", 1.5))
         point = None
@@ -197,6 +205,13 @@ def handle(cmd):
     elif c == "plant":
         # physical changes need a new model -> rebuild and reset
         layout = cmd.get("layout", "bar")
+        if layout == "rolling_hoop":
+            if rolling_sim is None:
+                rolling_sim = LiveRolling()
+            sim = rolling_sim
+            sim.reset((2.0, 0.0))
+            return dict(type="layout", layout=layout)
+        sim = pivot_sim
         p = NOMINAL.with_(m_e=float(cmd["m_e"]), com_offset_xy=(float(cmd["com_mm"]) / 1e3,) * 2,
                           wheel_tilt=float(np.deg2rad(cmd.get("tilt_deg", 0.0))),
                           wheel_ecc=float(cmd.get("ecc_mm", 0.0)) / 1e3)

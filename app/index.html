@@ -121,6 +121,21 @@
       <div class="muted">For scale: ~2.1–2.4 N for 50 ms on an end mass is the most it can recover from. The housing tolerates ~9–10 N.</div>
     </div>
 
+    <div class="panel" id="rollPanel" hidden>
+      <h2>Rolling hoop</h2>
+      <div class="grid2">
+        <button data-p="push_px">Kick forward<kbd>↑</kbd></button>
+        <button data-p="push_nx">Kick back<kbd>↓</kbd></button>
+      </div>
+      <div class="row">
+        <span class="muted">Launch at</span>
+        <button class="launch" data-v="0.5">0.5</button><button class="launch" data-v="1">1</button>
+        <button class="launch" data-v="2">2</button><button class="launch" data-v="3">3 m/s</button>
+        <button class="launch" data-v="-0.5">−0.5</button>
+      </div>
+      <div class="muted">The hoop rolls freely on a hub bearing, and the housing hangs from the axle. One reaction wheel balances it sideways. Its axis is along the lean axis, tilted up 7° so it can soak up turning momentum. It can't drive itself: the wheel only pushes on the hanging housing, so rolling is kicked, not powered. It rolls forward at any speed but backward only slowly (≤0.5 m/s), because the tilted wheel gives it a front. Uncontrolled it self-stabilises above ~1.5 m/s, like a rolling coin. ←/→ push it sideways.</div>
+    </div>
+
     <div class="panel">
       <h2>Grab</h2>
       <div class="check"><input type="checkbox" id="grabMode"><label for="grabMode">Grab mode (plain drag pulls instead of orbiting)</label></div>
@@ -184,6 +199,7 @@
           <option value="oval_035">oval hoop 1.04×0.36 m + tip weights, housing in middle (balances)</option>
           <option value="oval_025">oval hoop 1.10×0.28 m + tip weights, housing in middle (balances)</option>
           <option value="oval_018">oval hoop 1.14×0.20 m + tip weights (≈ paper performance)</option>
+          <option value="rolling_hoop">ROLLING hoop Ø0.66 m, hub + hanging housing (rolls on the floor)</option>
         </select></div>
       <label class="sl">End mass each [kg] <output id="oMe"></output><input id="me" type="range" min="0.15" max="0.5" step="0.01" value="0.304"></label>
       <label class="sl">Beam frequency f0 [Hz] <output id="oFb"></output><input id="fb" type="range" min="20" max="120" step="0.5" value="57.2"></label>
@@ -327,7 +343,10 @@ function onTelemetry(m) {
     $("hud").innerHTML = `t = ${state.t.toFixed(2)} s   ×${m.speed.toFixed(2)}<br>α ${buf.a[L].toFixed(2)}°   β ${buf.b[L].toFixed(2)}°<br>τ ${buf.u[L].toFixed(2)} N m   ω ${buf.w[L].toFixed(0)} rad/s` +
       (m.grab != null ? `<br><span style="color:#6fe0ff">grab force ${m.grab.toFixed(1)} N</span>` : "");
     $("readout").innerHTML = [
-      ["time", state.t.toFixed(2) + " s"], ["roll α", buf.a[L].toFixed(3) + "°"], ["pitch β", buf.b[L].toFixed(3) + "°"],
+      ...(state.rolling ? [["speed", state.rolling.speed.toFixed(2) + " m/s"], ["distance", state.rolling.distance.toFixed(1) + " m"],
+        ["lean", buf.a[L].toFixed(3) + "°"], ["housing pitch", buf.b[L].toFixed(2) + "°"], ["turn rate", state.rolling.yaw_rate.toFixed(2) + " rad/s"]] :
+        [["roll α", buf.a[L].toFixed(3) + "°"], ["pitch β", buf.b[L].toFixed(3) + "°"]]),
+      ["time", state.t.toFixed(2) + " s"],
       ["yaw γ", state.gamma_deg.toFixed(2) + "°" + (state.yaw_on ? `  → target ${state.heading_ref_deg.toFixed(0)}°` : "")],
       ["yaw control", state.yaw_on ? `${state.yaw_mode} · wheel target ${state.wheel_ref.toFixed(0)} rad/s · heading est ${state.heading_est_deg.toFixed(1)}°` : (state.yaw_available ? "off" : "needs a tilted wheel")], ["torque", buf.u[L].toFixed(3) + " N m"],
       ["available", buf.lim[L].toFixed(2) + " N m"], ["wheel", buf.w[L].toFixed(1) + " rad/s"],
@@ -338,6 +357,8 @@ function onTelemetry(m) {
   }
   if (m.grab == null && !grabbing) $("grabInfo").textContent = "Not grabbing";
   $("yawOn").disabled = !state.yaw_available;
+  $("rollPanel").hidden = !state.rolling;
+  if (state.rolling) $("hud").innerHTML += `<br><span style="color:#ffd36b">${state.rolling.speed.toFixed(2)} m/s · ${state.rolling.distance.toFixed(1)} m</span>`;
   if (document.activeElement !== $("tuning")) $("tuning").value = state.tuning;
   if (!state.yaw_available && $("yawOn").checked) $("yawOn").checked = false;
   $("yawInfo").textContent = state.yaw_available ? "" : "Set Plant → wheel axis tilt > 0 and apply first.";
@@ -381,6 +402,7 @@ $("applyPlant").onclick = () => { for (const k in buf) buf[k].length = 0; send({
 const sendYaw = () => send({ cmd: "yaw", on: $("yawOn").checked, heading_deg: +$("head").value });
 $("yawOn").onchange = sendYaw; $("head").onchange = sendYaw;
 $("plantDefault").onclick = () => { $("me").value = 0.304; $("fb").value = 57.2; $("comoff").value = 2; $("tilt").value = 0; $("ecc").value = 0; ["tilt", "ecc"].forEach(i => $(i).dispatchEvent(new Event("input"))); $("me").dispatchEvent(new Event("input")); $("fb").dispatchEvent(new Event("input")); $("comoff").dispatchEvent(new Event("input")); };
+document.querySelectorAll(".launch").forEach(b => b.onclick = () => send({ cmd: "launch", speed: +b.dataset.v }));
 $("jobTune").onclick = () => { liveTune = []; send({ cmd: "job", name: "tune", gens: +$("tuneGens").value, pop: +$("tunePop").value, warm: true }); };
 $("jobBench").onclick = () => send({ cmd: "job", name: "benchmark" });
 $("jobTests").onclick = () => send({ cmd: "job", name: "tests" });
