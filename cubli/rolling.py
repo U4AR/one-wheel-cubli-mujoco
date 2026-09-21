@@ -29,14 +29,17 @@ from .model import IMU_POS
 class RollingParams:
     R: float = 0.32            # hoop radius (m)
     M_hoop: float = 0.74       # hoop mass (kg), uniform thin hoop in the x-z plane
-    d: float = 0.05            # housing CoM below the axle (m)
+    d: float = 0.12            # housing CoM below the axle (m): lower = more drive authority
+                               # and less housing pitch when accelerating / braking
     # final design (scripts/rolling_hoop.py): wheel axis along the lean axis
     # (eta = 0, the paper's 45 deg only adds a harmful pitch component here, since
     # rolling cannot be driven anyway), tilted up 7 deg so its vertical component
     # can park the hoop's turning momentum -- needed to slow through the critical
     # (self-stabilising) speed without spiralling over
     eta: float = 0.0           # reaction-wheel axis angle from the lean axis
-    wheel_tilt: float = np.deg2rad(7)   # wheel axis tilted up out of the horizontal plane
+    wheel_tilt: float = np.deg2rad(15)  # wheel axis tilted up out of the horizontal plane;
+                                        # must exceed the housing pitch while braking
+    hub_tau: float = 2.0       # N m, hub drive motor (hoop <-> housing) peak torque (ASSUMED)
     bearing_damping: float = 2e-3   # N m s/rad, hub bearing
     mu: float = 1.0            # floor sliding friction
     mu_roll: float = 2e-4      # rolling friction (m)
@@ -130,6 +133,7 @@ def build_xml(rp: RollingParams = RollingParams(), timestep=5e-4):
   </worldbody>
   <actuator>
     <motor name="motor" joint="phi" gear="1" ctrlrange="{-P.tau_peak} {P.tau_peak}"/>
+    <motor name="hub" joint="axle" gear="1" ctrlrange="{-rp.hub_tau} {rp.hub_tau}"/>
   </actuator>
 </mujoco>
 """

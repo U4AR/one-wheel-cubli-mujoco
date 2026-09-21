@@ -249,7 +249,7 @@ This is a circular hoop (Ø0.66 m) rolling on the floor with real MuJoCo rim–f
 
 What the physics allows, and what it took:
 
-- **It can't propel itself.** The wheel only pushes on the hanging housing, and the hoop spins on a free bearing, so its rolling momentum is conserved apart from friction. It rolls when kicked, and stays balanced while rolling, but a hub motor would be needed to drive it.
+- **Speed control needs a second motor.** With only the reaction wheel, the hoop spins on a free bearing and its rolling momentum is conserved. Connecting the housing rigidly doesn't help either: a reaction wheel can change rolling speed by only about ±0.45 m/s before it saturates, and it would tumble with the hoop. The final design adds a **hub motor** between the hoop and the hanging housing. It swings the housing forward or back, gravity holds it there, and that drives the hoop, the way pendulum-drive robots work (see "Speed control" below).
 - **Speed changes everything.** Uncontrolled it falls sideways below ~1.25 m/s and is self-stable above, like a rolling coin. A controller designed at standstill fails at speed, because gyroscopic coupling turns lean torque into turning. The controller is a **speed-scheduled LQR** on a linear model derived with Kane's method (rolling without slip is nonholonomic). The model was validated against MuJoCo: lean growth 4.7 vs 4.7 /s at 0.5 m/s, weave 1.78 vs 1.81 Hz at 3 m/s.
 - **Two conservation laws shape the controller.** At speed, a yaw-rate/lean combination (vertical angular momentum) is conserved. A hoop given some lean must roll a steady circle, so the controller regulates to that torque-free equilibrium instead of fighting it; fighting it runs the wheel away. That conserved mode is removed exactly before the Riccati design. Crossing the critical speed with any turning momentum still makes the hoop spiral over, like a slowing coin.
 - **Wheel orientation.** The paper's 45° wheel is bad here: its pitch component swings the housing, which (leaning × rolling) makes the hoop curve. Putting the wheel on the lean axis fixes that. **Tilting it up 7°** gives it a vertical component that parks the turning momentum in the wheel, so the hoop can slow through the critical speed. The price is a front and a back.
@@ -266,7 +266,23 @@ Caveats:
 
 - The controller is fed simulated state measurements with noise, bias and 10 ms delay. The paper's IMU tilt estimator assumes a fixed pivot and does not apply to a rolling contact, and a rolling-contact estimator is not implemented.
 - The rim is 120 capsules, so rolling is slightly bumpy.
-- In the live viewer, pick Plant → Layout → ROLLING hoop, then kick or launch it.
+- In the live viewer, pick Plant → Layout → ROLLING hoop.
+
+#### Speed control: reaction wheel + hub motor (`DriveController`, `scripts/rolling_drive.py`)
+
+This is a two-input, speed-scheduled LQR: the wheel torque balances it, and the hub torque drives the speed, with integral action on the speed error. It keeps the conserved-mode handling from above. The design rules that came out of the simulations:
+
+- **Drive authority** is set by gravity on the swung housing: acceleration ≲ m_c·g·d·r / I_roll. The housing CoM sits 12 cm below the axle; at 5 cm it swung over the top when accelerating at 0.8 m/s².
+- **Housing pitch must stay below the wheel tilt.** The wheel rides in the housing, so braking pitch rotates its axis. Once the pitch exceeds the tilt, the vertical component flips sign and the hoop falls. So the wheel is tilted 15°, and speed changes are limited to 0.35 m/s² (≤ 15° of pitch).
+- **Where the turning momentum goes depends on speed.** At speed it is parked in the wheel. Near standstill the hoop is allowed to turn in place, which keeps the wheel unloaded. Always parking it in the wheel saturated the wheel after pushes, with 4–7 falls out of 8 on the stress sequence.
+- **Reverse is limited to 0.3 m/s**, because rolling backwards the tilted wheel acts like a negative tilt.
+
+| command | −0.3 | 0 | 0.5 | 1 | 2 | 3 m/s |
+|---|---|---|---|---|---|---|
+| speed held | −0.30 | 0.00 | 0.50 | 1.00 | 2.00 | 3.02 |
+| max sideways push while cruising | 11.8 N | 11.8 N | 11.8 N | 11.8 N | 11.8 N | 11.8 N |
+
+Every run brakes back to 0 m/s, with peak housing pitch ≤ 15°. On a 75 s stress sequence (0 → 1 → 2 → stop → reverse → stop → 3 m/s → stop, with three 5 N pushes mid-drive), 1 of 16 noise seeds fell. The hub motor is assumed to give ±2 N m; it uses well under 1 N m in these runs. In the live viewer, the rolling-hoop layout has a target-speed slider, speed buttons, and W/S/X keys.
 
 ## Live interactive viewer
 

@@ -157,8 +157,8 @@ def handle(cmd):
     c = cmd.get("cmd")
     if c == "pulse" and hasattr(sim, "kick"):
         sim.kick(cmd["preset"], float(cmd.get("force", 1.5)), float(cmd.get("duration", 0.05)))
-    elif c == "launch" and hasattr(sim, "launch"):
-        sim.launch(float(cmd.get("speed", 1.0)))
+    elif c == "speed_target" and hasattr(sim, "set_speed"):
+        sim.set_speed(float(cmd.get("speed", 0.0)))
     elif c == "pulse":
         body, direction = PRESETS[cmd["preset"]]
         F = float(cmd.get("force", 1.5))

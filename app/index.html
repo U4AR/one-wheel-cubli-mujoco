@@ -127,13 +127,14 @@
         <button data-p="push_px">Kick forward<kbd>↑</kbd></button>
         <button data-p="push_nx">Kick back<kbd>↓</kbd></button>
       </div>
+      <label class="sl">Target speed <output id="oVt"></output><input id="vt" type="range" min="-0.3" max="3" step="0.05" value="0"></label>
       <div class="row">
-        <span class="muted">Launch at</span>
-        <button class="launch" data-v="0.5">0.5</button><button class="launch" data-v="1">1</button>
-        <button class="launch" data-v="2">2</button><button class="launch" data-v="3">3 m/s</button>
-        <button class="launch" data-v="-0.5">−0.5</button>
+        <button class="vset" data-v="0">Stop<kbd>X</kbd></button><button class="vset" data-v="0.5">0.5</button>
+        <button class="vset" data-v="1">1</button><button class="vset" data-v="2">2</button>
+        <button class="vset" data-v="3">3 m/s</button><button class="vset" data-v="-0.3">reverse</button>
+        <span class="muted"><kbd>W</kbd>/<kbd>S</kbd> ±0.25</span>
       </div>
-      <div class="muted">The hoop rolls freely on a hub bearing, and the housing hangs from the axle. One reaction wheel balances it sideways. Its axis is along the lean axis, tilted up 7° so it can soak up turning momentum. It can't drive itself: the wheel only pushes on the hanging housing, so rolling is kicked, not powered. It rolls forward at any speed but backward only slowly (≤0.5 m/s), because the tilted wheel gives it a front. Uncontrolled it self-stabilises above ~1.5 m/s, like a rolling coin. ←/→ push it sideways.</div>
+      <div class="muted">Two motors. A hub motor between the hoop and the hanging housing drives the speed: it swings the housing forward or back, and gravity holds it there. The reaction wheel balances it sideways; its axis is on the lean axis, tilted up 15° to soak up turning momentum. Speed changes are limited to 0.35 m/s², so the housing never pitches more than the wheel is tilted. Reverse is limited to 0.3 m/s. Near standstill, leftover turning momentum lets the hoop turn in place, so the wheel stays unloaded. Kicks and pushes still work, and it returns to the target speed. ←/→ push it sideways.</div>
     </div>
 
     <div class="panel">
@@ -343,7 +344,8 @@ function onTelemetry(m) {
     $("hud").innerHTML = `t = ${state.t.toFixed(2)} s   ×${m.speed.toFixed(2)}<br>α ${buf.a[L].toFixed(2)}°   β ${buf.b[L].toFixed(2)}°<br>τ ${buf.u[L].toFixed(2)} N m   ω ${buf.w[L].toFixed(0)} rad/s` +
       (m.grab != null ? `<br><span style="color:#6fe0ff">grab force ${m.grab.toFixed(1)} N</span>` : "");
     $("readout").innerHTML = [
-      ...(state.rolling ? [["speed", state.rolling.speed.toFixed(2) + " m/s"], ["distance", state.rolling.distance.toFixed(1) + " m"],
+      ...(state.rolling ? [["speed", state.rolling.speed.toFixed(2) + " m/s  → target " + state.rolling.v_target.toFixed(2)], ["distance", state.rolling.distance.toFixed(1) + " m"],
+        ["hub torque", state.rolling.hub_torque.toFixed(2) + " N m"],
         ["lean", buf.a[L].toFixed(3) + "°"], ["housing pitch", buf.b[L].toFixed(2) + "°"], ["turn rate", state.rolling.yaw_rate.toFixed(2) + " rad/s"]] :
         [["roll α", buf.a[L].toFixed(3) + "°"], ["pitch β", buf.b[L].toFixed(3) + "°"]]),
       ["time", state.t.toFixed(2) + " s"],
@@ -384,7 +386,7 @@ const outs = [["force", "oForce", v => v + " N"], ["dur", "oDur", v => v + " ms"
   ["speed", "oSpeed", v => "×" + (+v).toFixed(2)], ["ta", "oTa", v => v + "°"], ["tb", "oTb", v => v + "°"],
   ["noise", "oNoise", v => (+v).toFixed(2)], ["me", "oMe", v => (+v).toFixed(3)], ["fb", "oFb", v => (+v).toFixed(1)],
   ["comoff", "oCom", v => (+v).toFixed(1)], ["tilt", "oTilt", v => v + "°"], ["ecc", "oEcc", v => (+v).toFixed(1)],
-  ["head", "oHead", v => v + "°"]];
+  ["head", "oHead", v => v + "°"], ["vt", "oVt", v => (+v).toFixed(1) + " m/s"]];
 for (const [i, o, f] of outs) { const upd = () => $(o).textContent = f($(i).value); $(i).addEventListener("input", upd); upd(); }
 
 function pulse(p) { send({ cmd: "pulse", preset: p, force: +$("force").value, duration: $("dur").value / 1000 }); }
@@ -402,7 +404,9 @@ $("applyPlant").onclick = () => { for (const k in buf) buf[k].length = 0; send({
 const sendYaw = () => send({ cmd: "yaw", on: $("yawOn").checked, heading_deg: +$("head").value });
 $("yawOn").onchange = sendYaw; $("head").onchange = sendYaw;
 $("plantDefault").onclick = () => { $("me").value = 0.304; $("fb").value = 57.2; $("comoff").value = 2; $("tilt").value = 0; $("ecc").value = 0; ["tilt", "ecc"].forEach(i => $(i).dispatchEvent(new Event("input"))); $("me").dispatchEvent(new Event("input")); $("fb").dispatchEvent(new Event("input")); $("comoff").dispatchEvent(new Event("input")); };
-document.querySelectorAll(".launch").forEach(b => b.onclick = () => send({ cmd: "launch", speed: +b.dataset.v }));
+const setV = (v) => { v = Math.max(-0.3, Math.min(3, v)); $("vt").value = v; $("vt").dispatchEvent(new Event("input")); send({ cmd: "speed_target", speed: v }); };
+document.querySelectorAll(".vset").forEach(b => b.onclick = () => setV(+b.dataset.v));
+$("vt").onchange = () => setV(+$("vt").value);
 $("jobTune").onclick = () => { liveTune = []; send({ cmd: "job", name: "tune", gens: +$("tuneGens").value, pop: +$("tunePop").value, warm: true }); };
 $("jobBench").onclick = () => send({ cmd: "job", name: "benchmark" });
 $("jobTests").onclick = () => send({ cmd: "job", name: "tests" });
@@ -410,6 +414,9 @@ $("jobStop").onclick = () => send({ cmd: "job_stop" });
 
 document.addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (state && state.rolling && (e.key === "w" || e.key === "s" || e.key === "x")) {
+    setV(e.key === "x" ? 0 : +$("vt").value + (e.key === "w" ? 0.25 : -0.25)); e.preventDefault(); return;
+  }
   const map = { ArrowLeft: "push_ny", ArrowRight: "push_py", ArrowUp: "push_px", ArrowDown: "push_nx", q: "drop_left", e: "drop_right", t: "twist" };
   if (map[e.key]) { pulse(map[e.key]); e.preventDefault(); }
   else if (e.key === " ") { send({ cmd: "pause", value: !paused }); e.preventDefault(); }

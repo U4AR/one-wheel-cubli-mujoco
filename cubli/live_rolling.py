@@ -6,7 +6,7 @@ import mujoco
 from PIL import Image
 
 from .rolling import RollingParams, load, P
-from .rolling_kane import ScheduledRollingController, measure6
+from .rolling_kane import DriveController, measure6
 from .sim import Motor
 
 _CTRL_CACHE = {}
@@ -15,9 +15,9 @@ _CTRL_CACHE = {}
 def controller_for(rp):
     key = (rp.R, rp.M_hoop, rp.d, rp.eta, rp.wheel_tilt, rp.bearing_damping)
     if key not in _CTRL_CACHE:
-        _CTRL_CACHE[key] = ScheduledRollingController(rp)
+        _CTRL_CACHE[key] = DriveController(rp)      # wheel (balance) + hub motor (speed)
     c = _CTRL_CACHE[key]
-    c.u = 0.0
+    c.reset(0.0)
     return c
 
 
@@ -31,7 +31,7 @@ class LiveRolling:
         self.plant = types.SimpleNamespace(layout="rolling", ring_radius=rp.R, m_e=0.0,
                                            beam_freq_hz=lambda: 0.0, com_offset_xy=(0.0, 0.0),
                                            wheel_tilt=rp.wheel_tilt, wheel_ecc=0.0)
-        self.tuning_name = "speed-scheduled LQR"
+        self.tuning_name = "speed-scheduled LQR, 2 motors"
         self.com_enable, self.noise_scale, self.delay_steps = False, 1.0, 1
         self.controller_on, self.yaw_on, self.yaw, self.heading_ref = True, False, None, 0.0
         self.renderer = None
@@ -71,15 +71,19 @@ class LiveRolling:
         d.qpos[3:7] = q
         d.qpos[2] = self.r_eff * np.cos(np.deg2rad(tilt_deg[0])) + 1e-4
         self.launch(v0, reset_pose=False)
-        self.ctrl.u = 0.0
+        self.ctrl.reset(v0)
         self.motor = Motor(P)
         self.bias = np.array([self.rng.normal(0, np.deg2rad(0.1)), 0, 0, self.rng.normal(0, np.deg2rad(0.1)), 0, 0])
         self.buf = [self.measure()] * (self.delay_steps + 1)
         self.pulses, self.grab, self.fell = [], None, False
-        self.u = self.ulim = 0.0
+        self.u = self.ulim = self.u_hub = 0.0
         self.samples = []
         self.dist = 0.0
         self.last_xy = d.qpos[:2].copy()
+
+    def set_speed(self, v):
+        """Rolling-speed command (m/s); the hub motor tracks it, rate-limited."""
+        self.ctrl.v_target = float(v)
 
     def launch(self, v, reset_pose=True):
         """Set the hoop rolling at v (m/s) along its current heading."""
@@ -96,10 +100,11 @@ class LiveRolling:
 
     # --------------------------------------------------------------- dynamics
     def measure(self):
-        x, v = measure6(self.m, self.d, self.r_eff)
+        x6, v = measure6(self.m, self.d, self.r_eff)
+        x = np.append(x6, v / self.r_eff)
         k = self.noise_scale
-        noise = np.array([np.deg2rad(0.03), 0.005, 0.005, np.deg2rad(0.03), 0.005, 0.3]) * k
-        return x + self.bias * k + self.rng.normal(0, 1, 6) * noise, v + self.rng.normal(0, 0.01 * k)
+        noise = np.array([np.deg2rad(0.03), 0.005, 0.005, np.deg2rad(0.03), 0.005, 0.3, 0.01]) * k
+        return x + np.append(self.bias, 0.0) * k + self.rng.normal(0, 1, 7) * noise, v + self.rng.normal(0, 0.01 * k)
 
     def pulse(self, body, force, duration, point=None):
         self.pulses.append([self.d.time + duration, self.body_names[body], np.asarray(force, float),
@@ -131,11 +136,12 @@ class LiveRolling:
         y, vm = self.buf[0]
         if self.controller_on and not self.fell:
             u_cmd = self.ctrl.step(y, vm)
-            self.u, self.ulim = self.motor.limit(u_cmd, d.qvel[self.wheel_dof], self.Ts)
-            self.ctrl.applied(self.u)
+            self.u, self.ulim = self.motor.limit(float(u_cmd[0]), d.qvel[self.wheel_dof], self.Ts)
+            self.u_hub = float(np.clip(u_cmd[1], -self.rp.hub_tau, self.rp.hub_tau))
+            self.ctrl.applied([self.u, self.u_hub])
         else:
-            self.u, self.ulim = 0.0, 0.0
-        d.ctrl[0] = self.u
+            self.u, self.ulim, self.u_hub = 0.0, 0.0, 0.0
+        d.ctrl[0], d.ctrl[1] = self.u, self.u_hub
         for _ in range(int(round(self.Ts / self.dt))):
             d.xfrc_applied[:] = 0
             self.pulses = [p for p in self.pulses if d.time < p[0]]
@@ -175,7 +181,8 @@ class LiveRolling:
                     plant=dict(tilt_deg=float(np.rad2deg(self.rp.wheel_tilt)), ecc_mm=0.0, m_e=0.0,
                                f_beam=0.0, com_offset_mm=0.0),
                     rolling=dict(speed=float(v), distance=self.dist, yaw_rate=float(x[2]),
-                                 pitch_deg=float(np.rad2deg(x[3]))))
+                                 pitch_deg=float(np.rad2deg(x[3])), v_target=float(self.ctrl.v_target),
+                                 v_cmd=float(self.ctrl.v_cmd), hub_torque=float(self.u_hub)))
 
     # ------------------------------------------------------------ interaction
     def _cam_axes(self):

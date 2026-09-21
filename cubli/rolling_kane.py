@@ -27,6 +27,7 @@ def _symbolic():
     mh, Icx, Icy, Icz = sm.symbols("m_h I_cx I_cy I_cz")
     mw, Iw, Iwt = sm.symbols("m_w I_w I_wt")
     T = me.dynamicsymbols("T")
+    Th = me.dynamicsymbols("T_h")          # hub motor: hoop <-> housing, about the axle
 
     N = me.ReferenceFrame("N")
     Y = N.orientnew("Y", "Axis", [q1, N.z])
@@ -58,11 +59,11 @@ def _symbolic():
     Iwd = Iw * (uvec | uvec) + Iwt * (me.inertia(H, 1, 1, 1) - (uvec | uvec))
     wheel = me.RigidBody("wheel", Pw, W, mw, (Iwd, Pw))
     loads = [(Dh, -M * g * N.z), (Ph, -mh * g * N.z), (Pw, -mw * g * N.z),
-             (H, -b * u4 * L.y - T * uvec), (Rf, b * u4 * L.y), (W, T * uvec)]
+             (H, -b * u4 * L.y - T * uvec + Th * L.y), (Rf, b * u4 * L.y - Th * L.y), (W, T * uvec)]
     KM = me.KanesMethod(N, q_ind=[q1, q2, q3, q4, q5], u_ind=[u1, u2, u3, u4, u5], kd_eqs=kd)
     KM.kanes_equations([hoop, house, wheel], loads)
     params = [r, M, d, g, eta, b, tw, mh, Icx, Icy, Icz, mw, Iw, Iwt]
-    return KM, (q1, q2, q3, q4, q5), (u1, u2, u3, u4, u5), T, params
+    return KM, (q1, q2, q3, q4, q5), (u1, u2, u3, u4, u5), (T, Th), params
 
 
 @functools.lru_cache(maxsize=1)
@@ -72,10 +73,10 @@ def _linearizer():
     return lin, qs, us, T, params
 
 
-def linear_model_at_speed(v, rp: RollingParams = RollingParams()):
-    """Continuous A (6x6), B (6x1) for x = (lean, lean_rate, yaw_rate, pitch, pitch_rate,
-    wheel_speed) about straight upright rolling at speed v (m/s)."""
-    lin, qs, us, T, params = _linearizer()
+def _linearize_full(v, rp):
+    """Full linearisation: state (q1..q5, u1..u5), inputs (T wheel, T_h hub)."""
+    lin, qs, us, Ts_, params = _linearizer()
+    T, Th = Ts_
     m_h, (Icx, Icy, Icz) = rp.housing()
     Iwt = max(P.I_wy, 0.5 * P.I_wx * 1.0001)
     r_eff = rp.R + 0.01                                     # rim capsule radius
@@ -84,7 +85,7 @@ def linear_model_at_speed(v, rp: RollingParams = RollingParams()):
     q1, q2, q3, q4, q5 = qs
     u1, u2, u3, u4, u5 = us
     op = {q1: 0, q2: 0, q3: 0, q4: 0, q5: 0, u1: 0, u2: v / r_eff, u3: 0, u4: 0, u5: 0,
-          T: 0}
+          T: 0, Th: 0}
     for q in qs:
         op[q.diff()] = 0
     op[u2.diff()] = 0
@@ -93,8 +94,25 @@ def linear_model_at_speed(v, rp: RollingParams = RollingParams()):
     A, B = lin.linearize(op_point=[op, vals], A_and_B=True)
     A = np.array(A.subs(vals).evalf(), dtype=float)
     B = np.array(B.subs(vals).evalf(), dtype=float)
+    order = list(lin.r)                  # input order chosen by SymPy
+    B = B[:, [order.index(T), order.index(Th)]]
+    return A, B
+
+
+def linear_model_at_speed(v, rp: RollingParams = RollingParams()):
+    """Continuous A (6x6), B (6x1) for x = (lean, lean_rate, yaw_rate, pitch, pitch_rate,
+    wheel_speed) about straight upright rolling at speed v (m/s); wheel torque only."""
+    A, B = _linearize_full(v, rp)
     # full state order: q1..q5, u1..u5
     keep = [1, 5, 7, 3, 8, 9]            # q2, u1, u3, q4, u4, u5
+    return A[np.ix_(keep, keep)], B[keep][:, :1]
+
+
+def linear_model_drive(v, rp: RollingParams = RollingParams()):
+    """With the hub motor: A (7x7), B (7x2) for x = (lean, lean_rate, yaw_rate, pitch,
+    pitch_rate, wheel_speed, hoop_spin), inputs (wheel torque, hub torque)."""
+    A, B = _linearize_full(v, rp)
+    keep = [1, 5, 7, 3, 8, 9, 6]         # ... + u2 (hoop spin = speed / r)
     return A[np.ix_(keep, keep)], B[keep]
 
 
@@ -108,8 +126,8 @@ SCALE = np.array([np.deg2rad(1), np.deg2rad(10), np.deg2rad(10), np.deg2rad(5), 
 
 
 def _c2d(A, B, Ts):
-    n = A.shape[0]
-    Mx = np.zeros((n + 1, n + 1)); Mx[:n, :n] = A; Mx[:n, n:] = B
+    n, m_ = B.shape
+    Mx = np.zeros((n + m_, n + m_)); Mx[:n, :n] = A; Mx[:n, n:] = B
     E = expm(Mx * Ts)
     return E[:n, :n], E[:n, n:]
 
@@ -281,4 +299,162 @@ def simulate_scheduled(rp=RollingParams(), T=12.0, lean0_deg=0.5, v0=0.0, pushes
             fell = True
             break
     # columns: t, lean, lean_rate, yaw_rate, pitch, pitch_rate, wheel, v, u, x, y
+    return np.array(log), fell
+
+
+# ---------------------------------------------------------------------------
+# Speed control: reaction wheel (lean) + hub motor (rolling speed)
+V_DRIVE = np.array([-3.0, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0])
+# state: lean, lean_rate, yaw_rate, pitch, pitch_rate, wheel, hoop_spin, int(spin error)
+SCALE_D = np.array([np.deg2rad(1), np.deg2rad(10), np.deg2rad(10), np.deg2rad(10), np.deg2rad(30),
+                    50.0, 0.3, 0.3])
+
+
+def _conserved_general(A, B, weights, tol=1e-8):
+    """Left null vector w of [A B] and the 'nicest' torque-free equilibrium x_eq
+    (A x_eq = 0, w'x_eq = 1, minimising x_eq' diag(weights) x_eq)."""
+    U, sv, _ = np.linalg.svd(np.hstack([A, B]))
+    n = A.shape[0]
+    if len(sv) == n and sv[-1] > tol * sv.max():
+        return None, None
+    w = U[:, -1]
+    if w[2] < 0:
+        w = -w
+    _, sa, Vt = np.linalg.svd(A)
+    NA = Vt[sa < 1e-8 * sa.max()].T
+    if NA.shape[1] == 0:
+        return None, None
+    G = NA.T @ np.diag(weights) @ NA
+    xeq = NA @ np.linalg.solve(G + 1e-12 * np.eye(len(G)), NA.T @ w)
+    return w, xeq / (w @ xeq)
+
+
+class DriveController:
+    """Two inputs (wheel torque, hub torque), gains scheduled on rolling speed.
+    Tracks a rolling-speed command with integral action (rolling friction needs a
+    steady housing tilt), balances sideways, handles the conserved yaw/lean mode
+    exactly as ScheduledRollingController does, and compensates the 10 ms delay."""
+
+    def __init__(self, rp: RollingParams = RollingParams(), Ts=0.01,
+                 Q=(1.0, 0.1, 0.01, 0.1, 0.05, 0.05, 1.0, 0.3), R=(20.0, 20.0), accel=0.35,
+                 v_min=-0.3, v_max=3.0, park_in_wheel=False):
+        # accel: the housing pitches ~ accel to drive / brake; that pitch must stay
+        # below the wheel tilt, else the wheel's vertical component flips sign.
+        # v_min: backwards the tilted wheel acts like a negative tilt -> slow reverse only
+        # park_in_wheel=False: speed-dependent handling of the conserved turning
+        # momentum (wheel at speed, turning in place near standstill) -- 0/8 falls
+        # on a long drive/brake/reverse/push sequence vs 4-7/8 when always parked
+        self.rp, self.Ts, self.accel = rp, Ts, accel
+        self.v_min, self.v_max = v_min, v_max
+        self.r = rp.R + 0.01
+        S = np.diag(SCALE_D); Si = np.linalg.inv(S)
+        self.K, self.Ad, self.Bd, self.Rmap = [], [], [], []
+        for v in V_DRIVE:
+            A7, B7 = linear_model_drive(v, rp)
+            A = np.zeros((8, 8)); A[:7, :7] = A7; A[7, 6] = 1.0     # integrator of spin error
+            B = np.zeros((8, 2)); B[:7] = B7
+            # where to put conserved turning momentum: at speed it must go into the
+            # wheel (turning would mean leaning into a circle); near standstill the
+            # hoop can just turn in place, which keeps the wheel unloaded
+            fast = 1.0 if park_in_wheel else min(abs(v) / 1.5, 1.0)
+            w_yaw = 10 ** (-2 + 5 * fast)          # 1e-2 at rest -> 1e3 at >= 1.5 m/s
+            w_wheel = 10 ** (0 - 4 * fast)         # 1 at rest   -> 1e-4 at >= 1.5 m/s
+            w, xeq = _conserved_general(A, B, weights=[1e4, 1, w_yaw, 1, 1, w_wheel, 1e4, 1e4])
+            Ad, Bd = _c2d(A, B, Ts)
+            An, Bn = Si @ Ad @ S, Si @ Bd
+            Rm = np.diag(R)
+            if w is None:
+                Pr = solve_discrete_are(An, Bn, np.diag(Q), Rm)
+                K = np.linalg.solve(Rm + Bn.T @ Pr @ Bn, Bn.T @ Pr @ An) @ Si
+                Rmap = np.zeros((8, 8))
+            else:
+                wn, xn = S @ w, Si @ xeq
+                Pn = np.eye(8) - np.outer(xn, wn)
+                V = np.linalg.svd(wn[None, :])[2][1:].T
+                Ar, Br = V.T @ Pn @ An @ V, V.T @ Pn @ Bn
+                Pr = solve_discrete_are(Ar, Br, V.T @ np.diag(Q) @ V, Rm)
+                K = np.linalg.solve(Rm + Br.T @ Pr @ Br, Br.T @ Pr @ Ar) @ V.T @ Si
+                Rmap = np.outer(xeq, w)
+            self.K.append(K); self.Ad.append(Ad[:7, :7]); self.Bd.append(Bd[:7]); self.Rmap.append(Rmap)
+        self.K, self.Ad, self.Bd, self.Rmap = map(np.array, (self.K, self.Ad, self.Bd, self.Rmap))
+        self.ref_lim = np.array([np.deg2rad(6), np.inf, 1.5, np.inf, np.inf, 300.0, np.inf, np.inf])
+        self.reset()
+
+    def reset(self, v=0.0):
+        self.u = np.zeros(2)
+        self.integ = 0.0
+        self.v_cmd = v                 # rate-limited speed command actually tracked
+        self.v_target = v
+
+    def _interp(self, arr, v):
+        v = float(np.clip(v, V_DRIVE[0], V_DRIVE[-1]))
+        i = int(np.clip(np.searchsorted(V_DRIVE, v) - 1, 0, len(V_DRIVE) - 2))
+        a = (v - V_DRIVE[i]) / (V_DRIVE[i + 1] - V_DRIVE[i])
+        return (1 - a) * arr[i] + a * arr[i + 1]
+
+    def step(self, x_delayed, v_meas):
+        """x_delayed: 7-state measurement from the previous step (spin = v/r)."""
+        tgt = float(np.clip(self.v_target, self.v_min, self.v_max))
+        self.v_cmd += float(np.clip(tgt - self.v_cmd, -self.accel * self.Ts, self.accel * self.Ts))
+        x = np.asarray(x_delayed, float)
+        Ad, Bd, K, Rm = (self._interp(a, v_meas) for a in (self.Ad, self.Bd, self.K, self.Rmap))
+        xhat = Ad @ x + Bd @ self.u
+        spin_ref = self.v_cmd / self.r
+        self.integ = float(np.clip(self.integ + (xhat[6] - spin_ref) * self.Ts, -2.0, 2.0))
+        xa = np.concatenate([xhat, [self.integ]])
+        ref = np.clip(Rm @ xa, -self.ref_lim, self.ref_lim)
+        ref[6] += spin_ref
+        self.u = -(K @ (xa - ref))
+        return self.u.copy()
+
+    def applied(self, u):
+        self.u = np.asarray(u, float)
+
+
+def simulate_drive(rp=RollingParams(), T=20.0, v_target=lambda t: 0.0, lean0_deg=1.0, v0=0.0,
+                   pushes=(), seed=0, Ts=0.01, dt=5e-4, ctrl=None):
+    """Closed loop with speed commands. Returns log columns:
+    t, lean, lean_rate, yaw_rate, pitch, pitch_rate, wheel, v, v_cmd, u_wheel, u_hub, x, y."""
+    from .rolling import load
+    from .sim import Motor
+    rng = np.random.default_rng(seed)
+    m, d = load(rp, dt)
+    q = np.zeros(4); mujoco.mju_axisAngle2Quat(q, np.array([1.0, 0, 0]), np.deg2rad(lean0_deg))
+    d.qpos[3:7] = q
+    r = rp.R + 0.01
+    d.qpos[2] = r * np.cos(np.deg2rad(lean0_deg)) + 1e-4
+    d.qvel[0] = v0; d.qvel[4] = v0 / r; d.qvel[m.joint("axle").dofadr[0]] = -v0 / r
+    mujoco.mj_forward(m, d)
+    ctrl = ctrl or DriveController(rp, Ts)
+    ctrl.reset(v0)
+    motor = Motor(P)
+    bias = np.array([rng.normal(0, np.deg2rad(0.1)), 0, 0, rng.normal(0, np.deg2rad(0.1)), 0, 0, 0])
+    noise = np.array([np.deg2rad(0.03), 0.005, 0.005, np.deg2rad(0.03), 0.005, 0.3, 0.01])
+    ids = {b: m.body(b).id for _, _, b, _, _ in pushes}
+
+    def meas():
+        x6, v = measure6(m, d, r)
+        x = np.append(x6, v / r)
+        return x + bias + rng.normal(0, 1, 7) * noise, v, x
+
+    y, vm, _ = meas()
+    log, fell = [], False
+    for k in range(int(T / Ts)):
+        ctrl.v_target = v_target(d.time)
+        u = ctrl.step(y, vm)
+        uw, _ = motor.limit(float(u[0]), d.qvel[m.joint("phi").dofadr[0]], Ts)
+        uh = float(np.clip(u[1], -rp.hub_tau, rp.hub_tau))
+        ctrl.applied([uw, uh])
+        y, vm, x_true = meas()
+        d.ctrl[0], d.ctrl[1] = uw, uh
+        for _ in range(int(round(Ts / dt))):
+            d.xfrc_applied[:] = 0
+            for t0, dur, bname, F, pt in pushes:
+                if t0 <= d.time < t0 + dur:
+                    d.xfrc_applied[ids[bname], :3] += F
+            mujoco.mj_step(m, d)
+        log.append([d.time, *x_true[:6], x_true[6] * r, ctrl.v_cmd, uw, uh, d.qpos[0], d.qpos[1]])
+        if abs(x_true[0]) > np.deg2rad(30):
+            fell = True
+            break
     return np.array(log), fell

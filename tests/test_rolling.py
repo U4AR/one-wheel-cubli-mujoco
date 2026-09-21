@@ -23,3 +23,10 @@ def test_balances_standing_and_rolling():
     for v in (0.0, 1.0):
         L, fell = simulate_scheduled(RollingParams(), T=6.0, v0=v, lean0_deg=2.0)
         assert not fell, v
+
+
+def test_hub_motor_tracks_speed():
+    from cubli.rolling_kane import simulate_drive
+    L, fell = simulate_drive(RollingParams(), T=12.0, v_target=lambda t: 1.0 if t > 1 else 0.0, lean0_deg=1.0)
+    assert not fell
+    assert abs(L[-100:, 7].mean() - 1.0) < 0.05

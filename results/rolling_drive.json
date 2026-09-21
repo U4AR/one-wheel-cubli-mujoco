@@ -1,0 +1,47 @@
+{
+ "cruise": [
+  {
+   "target": -0.3,
+   "fell": false,
+   "speed_held": -0.299,
+   "stopped_at": -0.0,
+   "peak_housing_pitch_deg": 12.8
+  },
+  {
+   "target": 0.5,
+   "fell": false,
+   "speed_held": 0.5,
+   "stopped_at": -0.0,
+   "peak_housing_pitch_deg": 14.8
+  },
+  {
+   "target": 1.0,
+   "fell": false,
+   "speed_held": 1.001,
+   "stopped_at": -0.0,
+   "peak_housing_pitch_deg": 14.8
+  },
+  {
+   "target": 2.0,
+   "fell": false,
+   "speed_held": 2.005,
+   "stopped_at": -0.0,
+   "peak_housing_pitch_deg": 14.8
+  },
+  {
+   "target": 3.0,
+   "fell": false,
+   "speed_held": 3.024,
+   "stopped_at": 0.001,
+   "peak_housing_pitch_deg": 14.8
+  }
+ ],
+ "max_push": {
+  "-0.3": 11.8,
+  "0.0": 11.8,
+  "0.5": 11.8,
+  "1.0": 11.8,
+  "2.0": 11.8,
+  "3.0": 11.8
+ }
+}
