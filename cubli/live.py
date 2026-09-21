@@ -109,8 +109,10 @@ class LiveSim:
         ws = d.sensordata[self.ws_id] + self.rng.normal(0, s.wheel_std)
         return acc, gyr, ws
 
-    def pulse(self, body, force, duration):
-        self.pulses.append([self.d.time + duration, self.body_names[body], np.asarray(force, float)])
+    def pulse(self, body, force, duration, point=None):
+        """Force pulse on a body, at its CoM or at `point` (body frame)."""
+        self.pulses.append([self.d.time + duration, self.body_names[body],
+                            np.asarray(force, float), None if point is None else np.asarray(point, float)])
 
     def control_step(self):
         d = self.d
@@ -131,8 +133,11 @@ class LiveSim:
         for _ in range(int(round(self.Ts / self.dt))):
             d.xfrc_applied[:] = 0
             self.pulses = [p for p in self.pulses if d.time < p[0]]
-            for _, b, f in self.pulses:
+            for _, b, f, pt in self.pulses:
                 d.xfrc_applied[b, :3] += f
+                if pt is not None:
+                    pw = d.xpos[b] + d.xmat[b].reshape(3, 3) @ pt
+                    d.xfrc_applied[b, 3:] += np.cross(pw - d.xipos[b], f)
             if self.grab is not None:
                 b, F = self.grab["body"], self.grab["force"]
                 p = d.xpos[b] + d.xmat[b].reshape(3, 3) @ self.grab["local"]
@@ -233,8 +238,8 @@ class LiveSim:
     def render_jpeg(self, quality=80):
         d = self.d
         self.renderer.update_scene(d, camera=self.cam)
-        for _, b, f in self.pulses:     # pulse forces: arrow pointing at the body
-            p = d.xipos[b]
+        for _, b, f, pt in self.pulses:     # pulse forces: arrow pointing at the body
+            p = d.xipos[b] if pt is None else d.xpos[b] + d.xmat[b].reshape(3, 3) @ pt
             self._arrow(p - 0.03 * f, p, (1.0, 0.85, 0.1, 1))
         if self.grab is not None:
             b = self.grab["body"]

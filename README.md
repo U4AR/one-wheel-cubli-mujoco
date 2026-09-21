@@ -230,6 +230,19 @@ The hoop's tilt frequencies are nearly equal (ε = 0.91), so correcting a small 
 
 A pole only helps if the body has to rotate it; that is where its inertia comes from. If it stays level, the body never swings it. Its rotational inertia is decoupled, and it acts exactly like a point mass at the mount: the unstable rates match to 0.05 %. That adds roll and pitch inertia equally, making things worse. The only level-pole version that works uses a second motor to hold the pole level. That motor then pushes on the body, so the system is no longer single-actuator.
 
+**Elliptical hoop (single motor, housing in the middle).** (`scripts/ring_ellipse.py`) Every shape keeps the paper's total mass and pitch inertia about the pivot. The pivot tip sits low enough that the rim clears the ground up to 15° of tilt. It runs on the full realistic stack: noise and bias, delay, CoM offset, and the paper's motor.
+
+| hoop | size (w × h) | ε | balances | max end drop | max side push | recovers from |
+|---|---|---|---|---|---|---|
+| uniform, circle → b/a = 0.12 | 0.64 × 0.64 → 1.65 × 0.20 m | 0.91 → 0.63 | **no** (none of 7 shapes) | – | – | – |
+| b/a 0.5, 90 % of the mass in 3/9 o'clock weights | 0.94 × 0.47 m | 0.68 | no | – | – | – |
+| **b/a 0.35, 90 % in tip weights** | 1.04 × 0.36 m | 0.59 | yes | 1.9 N | 4.8 N | 1° |
+| **b/a 0.25, 90 % in tip weights** | 1.10 × 0.28 m | 0.52 | yes | 2.2 N | 6.7 N | 1° |
+| b/a 0.18, 90 % in tip weights | 1.14 × 0.20 m | 0.48 | yes | 2.3 N | 8.3 N | 2° |
+| paper bar | 1.25 m | 0.43 | yes | 2.3 N | 10.5 N | 2° |
+
+A uniform hoop never gets there. Its mass is spread along the curve and counts only about ⅓ toward pitch inertia, compared with the same mass at the tips. So the hoop has to be both flattened *and* have most of its mass at 3 and 9 o'clock. The roundest single-motor ring that balances is about 1.04 × 0.36 m. A search over LQR weights changed nothing here, so the limit is physical, not tuning. The three balancing ovals are presets in the live viewer (Plant → Layout). There, the drop buttons hit the hoop's tip weights.
+
 ## Live interactive viewer
 
 `app/server.py` runs the real MuJoCo plant and the full estimator/controller in real time, and streams it to your browser:

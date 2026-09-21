@@ -69,23 +69,25 @@ def build_xml(p: CubliParams = NOMINAL, timestep=5e-4, ground_limits=False) -> s
         for a, b in edges)
     if ring:
         R, c, M = p.ring_radius, p.ring_center, p.ring_mass
-        n_seg = 64
-        pts = [(R * np.sin(2 * np.pi * i / n_seg), c - R * np.cos(2 * np.pi * i / n_seg))
+        Rb = p.ring_b or R                      # vertical semi-axis (ellipse)
+        n_seg = 96
+        pts = [(R * np.sin(2 * np.pi * i / n_seg), c - Rb * np.cos(2 * np.pi * i / n_seg))
                for i in range(n_seg + 1)]
         ring_geoms = "\n".join(
             f'        <geom type="capsule" fromto="{x0} 0 {z0 - c} {x1} 0 {z1 - c}" size="0.008" material="mass" contype="0" conaffinity="0"/>'
             for (x0, z0), (x1, z1) in zip(pts[:-1], pts[1:]))
         hub = zr + p.l_P                      # spokes from the housing to the hoop
         spokes = "\n".join(
-            f'        <geom type="capsule" fromto="0 0 {hub - c} {R * np.sin(t)} 0 {-R * np.cos(t)}" size="0.003" material="carbon" contype="0" conaffinity="0"/>'
-            for t in np.deg2rad([60, 120, 180, 240, 300]))
+            f'        <geom type="capsule" fromto="0 0 {hub - c} {R * np.sin(t)} 0 {-Rb * np.cos(t)}" size="0.003" material="carbon" contype="0" conaffinity="0"/>'
+            for t in np.deg2rad([60, 90, 120, 180, 240, 270, 300]))
         mw_ = p.ring_weights            # point masses at (+-R, 0, 0) from the hoop centre
+        hx, hy, hz = p.hoop_inertia()
         Mt = M + 2 * mw_
         wgeoms = "\n".join(
             f'        <geom type="sphere" pos="{sx * R} 0 0" size="0.03" material="alu" contype="0" conaffinity="0"/>'
             for sx in (-1, 1)) if mw_ > 0 else ""
         mass_bodies = f"""      <body name="ring" pos="0 0 {c}">
-        <inertial pos="0 0 0" mass="{Mt}" diaginertia="{M * R**2 / 2 + 1e-9} {M * R**2 + 2 * mw_ * R**2} {M * R**2 / 2 + 2 * mw_ * R**2}"/>
+        <inertial pos="0 0 0" mass="{Mt}" diaginertia="{hx + 1e-9} {hy + 2 * mw_ * R**2} {hz + 2 * mw_ * R**2}"/>
 {wgeoms}
 {ring_geoms}
 {spokes}

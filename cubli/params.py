@@ -25,7 +25,8 @@ class CubliParams:
     # 2*l_E long, at height l_Q) is removed from the housing's mass/inertia.
     layout: str = "bar"       # "bar" (paper) or "ring"
     ring_mass: float = 0.0    # kg
-    ring_radius: float = 0.0  # m
+    ring_radius: float = 0.0  # m, horizontal semi-axis (radius for a circle)
+    ring_b: float = 0.0       # m, vertical semi-axis (0 = circle, same as ring_radius)
     ring_center: float = 0.0  # m, height of the hoop centre above the pivot
     core_raise: float = 0.0   # m, housing (+wheel, IMUs) raised above the pivot
     ring_weights: float = 0.0 # kg, each of two point masses on the hoop at 3 and 9 o'clock
@@ -83,6 +84,17 @@ class CubliParams:
     # stop a yaw spin: gravity and the pivot force have no vertical torque about the
     # pivot and the motor torque is internal, so vertical angular momentum is conserved.
     yaw_friction: float = 4e-3             # N m
+
+    def hoop_inertia(self):
+        """(I_xx, I_yy, I_zz) about the hoop centre of a thin uniform (per arc
+        length) elliptical hoop in the x-z plane, semi-axes a (x) and b (z)."""
+        a = self.ring_radius
+        b = self.ring_b or a
+        t = np.linspace(0, 2 * np.pi, 4001)[:-1]
+        x, z = a * np.sin(t), -b * np.cos(t)
+        ds = np.sqrt((a * np.cos(t))**2 + (b * np.sin(t))**2)
+        w = self.ring_mass * ds / ds.sum()
+        return float((w * z**2).sum()), float((w * (x**2 + z**2)).sum()), float((w * x**2).sum())
 
     def housing_without_tube(self):
         """(mass, l_S, I_x, I_y, I_z about the pivot) of the housing minus the

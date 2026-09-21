@@ -42,6 +42,12 @@ RING_PRESETS = {
     "ring_weights": dict(R=0.2, M=0.1, w=0.3, middle=False),
     # the "housing in the middle" hoop with the paper's pitch inertia: cannot balance
     "ring_middle": dict(R=0.3196, M=0.7427, middle=True),
+    # flattened (elliptical) hoops, housing in the middle, 90 % of the hoop mass in
+    # weights at 3 and 9 o'clock; same total mass and pitch inertia as the paper
+    # (scripts/ring_ellipse.py). These balance with the paper's motor.
+    "oval_035": dict(R=0.5196, b=0.1819, M=0.0743, w=0.3342, c=0.2312, raise_=0.0845, tuning="tuned"),
+    "oval_025": dict(R=0.5506, b=0.1377, M=0.0743, w=0.3342, c=0.2049, raise_=0.0581, tuning="tuned"),
+    "oval_018": dict(R=0.5686, b=0.1023, M=0.0743, w=0.3342, c=0.1873, raise_=0.0405, tuning="tuned"),
 }
 
 # pulse presets: body, unit force direction (world frame)
@@ -148,7 +154,12 @@ def handle(cmd):
     if c == "pulse":
         body, direction = PRESETS[cmd["preset"]]
         F = float(cmd.get("force", 1.5))
-        sim.pulse(body, np.array(direction, float) * F, float(cmd.get("duration", 0.05)))
+        point = None
+        if sim.plant.layout == "ring" and body.startswith("endmass"):
+            # hoop layouts: hit the hoop at 3 / 9 o'clock (where its tip weights sit)
+            sx = 1.0 if body == "endmass2" else -1.0
+            body, point = "ring", (sx * sim.plant.ring_radius, 0.0, 0.0)
+        sim.pulse(body, np.array(direction, float) * F, float(cmd.get("duration", 0.05)), point)
     elif c == "grab_start":
         return dict(type="grabbed", body=sim.grab_start(cmd["x"], cmd["y"]))
     elif c == "grab_move":
@@ -194,11 +205,13 @@ def handle(cmd):
         if layout != "bar":
             mh, lS, *_ = NOMINAL.housing_without_tube()
             ring = RING_PRESETS[layout]
+            c = ring.get("c", 1.05 * ring["R"])
+            raise_ = ring.get("raise_", (c - lS) if ring.get("middle") else 0.0)
             p = p.with_(layout="ring", ring_mass=ring["M"], ring_radius=ring["R"],
-                        ring_center=1.05 * ring["R"], ring_weights=ring.get("w", 0.0),
-                        core_raise=(1.05 * ring["R"] - lS) if ring["middle"] else 0.0)
-            sim.tuning_name = "ring"
-        elif sim.tuning_name == "ring":
+                        ring_b=ring.get("b", 0.0), ring_center=c,
+                        ring_weights=ring.get("w", 0.0), core_raise=raise_)
+            sim.tuning_name = ring.get("tuning", "ring")
+        if layout == "bar" and sim.tuning_name == "ring":
             sim.tuning_name = "tuned"
         p = p.with_(k=p.k_from_freq(float(cmd["f_beam"])))
         sim.plant = p

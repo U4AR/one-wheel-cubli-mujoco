@@ -23,6 +23,7 @@ from cubli.model import load
 from cubli.params import NOMINAL
 from cubli.linearize import continuous_reduced
 from cubli.sim import run, Disturbance
+run = run
 from cubli.tunings import get
 
 GAP = 1.05          # hoop centre at 1.05 R: rim clears the ground up to ~17 deg tilt
