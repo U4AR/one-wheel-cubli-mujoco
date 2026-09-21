@@ -304,6 +304,17 @@ Caveats:
 - The same measurement caveat as above applies (simulated state measurements, no rolling-contact estimator).
 - In the live viewer, pick "ROLLING hoop: ONE motor (hub) + passive gyro".
 
+### Can the paper's cube do a somersault? (`cubli/somersault.py`, `scripts/somersault.py`)
+
+![somersault](media/somersault.gif)
+
+For this, the paper device is simulated as a **free body on the floor**, with contacts at the pivot tip, housing corners, cantilever and end masses. It keeps the paper's masses, inertias, wheel and motor, with a rigid cantilever.
+
+- **Where it ends up after a fall.** Its housing is small compared with the cantilever height, so it doesn't stop on a housing corner. It rolls right over and comes to rest **upside down**, on the bar and the housing top.
+- **Somersault: yes.** Spin the wheel to 420 rad/s. The reaction presses the body into the floor, so it stays put. Then drive the wheel hard to −320…−420 rad/s. The momentum dump rolls the body a **full turn about the cantilever axis** and it lands upside down again. This worked at floor friction μ = 0.5, 0.8 and 1.2. Weaker throws (reversing to only 160–260 rad/s) either fall back or stop half-way, depending on friction.
+- **A real airborne flip is impossible.** Reaction wheels give no upward thrust. Lifting off by spinning about the contact would need ≈ 7.4 rad/s, and the wheel's whole momentum gives at most ≈ 4.6 rad/s.
+- **Jump-up to balance** (flip up onto the tip and catch it, like the original Cubli): **not achieved.** The energy is there: a throw delivers the body to within 2–4° of upright. But on the free body the balance LQR recovers from only ≈ 3–5° of tilt at rest, since roll errors need big coupled pitch swings of the heavy bar. The throw arrives still moving and with little wheel authority left. Energy-shaping swing-up and throw-plus-trim strategies hit the same limit. The three-wheel Cubli can jump up because each axis has its own wheel; with one wheel the catch region is too small for this motor and wheel.
+
 ## Live interactive viewer
 
 `app/server.py` runs the real MuJoCo plant and the full estimator/controller in real time, and streams it to your browser:

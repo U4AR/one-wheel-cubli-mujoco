@@ -1,0 +1,87 @@
+{
+ "rest": {
+  "alpha_deg": 23.9,
+  "upside_down": true
+ },
+ "somersault": [
+  {
+   "mu": 0.5,
+   "reverse_to": 160,
+   "rolled_deg": 0,
+   "full_turn": false
+  },
+  {
+   "mu": 0.5,
+   "reverse_to": 260,
+   "rolled_deg": 406,
+   "full_turn": true
+  },
+  {
+   "mu": 0.5,
+   "reverse_to": 320,
+   "rolled_deg": 407,
+   "full_turn": true
+  },
+  {
+   "mu": 0.5,
+   "reverse_to": 420,
+   "rolled_deg": 358,
+   "full_turn": true
+  },
+  {
+   "mu": 0.8,
+   "reverse_to": 160,
+   "rolled_deg": 290,
+   "full_turn": false
+  },
+  {
+   "mu": 0.8,
+   "reverse_to": 260,
+   "rolled_deg": 292,
+   "full_turn": false
+  },
+  {
+   "mu": 0.8,
+   "reverse_to": 320,
+   "rolled_deg": 406,
+   "full_turn": true
+  },
+  {
+   "mu": 0.8,
+   "reverse_to": 420,
+   "rolled_deg": 406,
+   "full_turn": true
+  },
+  {
+   "mu": 1.2,
+   "reverse_to": 160,
+   "rolled_deg": 289,
+   "full_turn": false
+  },
+  {
+   "mu": 1.2,
+   "reverse_to": 260,
+   "rolled_deg": 407,
+   "full_turn": true
+  },
+  {
+   "mu": 1.2,
+   "reverse_to": 320,
+   "rolled_deg": 406,
+   "full_turn": true
+  },
+  {
+   "mu": 1.2,
+   "reverse_to": 420,
+   "rolled_deg": 406,
+   "full_turn": true
+  }
+ ],
+ "catch_region": {
+  "1": true,
+  "3": true,
+  "5": true,
+  "8": false,
+  "12": false
+ }
+}
