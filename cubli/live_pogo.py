@@ -16,7 +16,7 @@ class LivePogo(LiveRolling):
         self.W, self.H, self.Ts, self.dt = width, height, Ts, dt
         self.plant = types.SimpleNamespace(layout="pogo", ring_radius=0.0, m_e=P.m_e, beam_freq_hz=lambda: 0.0,
                                            com_offset_xy=(0.0, 0.0), wheel_tilt=0.0, wheel_ecc=0.0)
-        self.tuning_name = "pogo: stance LQR + flight law + flip guidance"
+        self.tuning_name = "pogo: stance LQR + flight law + flip guidance (external sensors)"
         self.com_enable, self.noise_scale, self.delay_steps = False, 1.0, 1
         self.controller_on, self.yaw_on, self.yaw, self.heading_ref = True, False, None, 0.0
         self.renderer = None

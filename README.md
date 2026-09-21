@@ -362,7 +362,7 @@ What it took (each step was a failure mode in simulation first):
 Caveats:
 
 - The cam, clutch, ratchet and escapement are idealised. The cam and escapement are a moving upper limit on the leg joint, the clutch is a speed threshold, and the escapement pays out at a fixed rate.
-- The foot load cell and the tilt states are measured directly, with noise, instead of by the paper's IMU estimator. In flight a real IMU sees free fall, so a real tilt estimate there would come from gyro integration.
+- Sensing is assumed to be **external**: motion capture supplies tilt and rates (with noise), and a load cell in the foot supplies contact. The paper's IMU estimator is not used here; an on-board-only version would need gyro integration in flight, where accelerometers read free fall.
 - A somersault landing usually needs **one extra, controlled hop** before it is a stick again. Correcting the ≈ 0.5° landing pitch through the 45° wheel swings the wheel above the clutch speed, the cam winds, and the controller flies that jump deliberately instead of letting it fire at a random wheel speed.
 - Hopping at 90 rad/s is faster (one hop every ≈ 2.3 s, 8/8 seeds survive), but stopping then takes up to four more hops. The default is 60 rad/s; the viewer has a slider.
 

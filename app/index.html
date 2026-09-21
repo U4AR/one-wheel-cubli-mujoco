@@ -64,7 +64,7 @@
 <body>
 <header>
   <h1>One-Wheel Cubli</h1>
-  <span class="sub">MuJoCo · LQR + delay-compensating Kalman filter · live</span>
+  <span class="sub" id="subtitle">MuJoCo · LQR + delay-compensating Kalman filter · live</span>
   <span id="status" class="pill">connecting…</span>
   <span class="spacer"></span>
   <span class="conn" id="conn"></span>
@@ -150,7 +150,7 @@
       </div>
       <label class="sl">Hop wheel speed <output id="oHs"></output><input id="hs" type="range" min="40" max="100" step="5" value="60"></label>
       <div class="muted" id="pogoMsg"></div>
-      <div class="muted">The same motor balances and powers the jumps. Its shaft drives a snail cam through a centrifugal clutch, a ratchet and a 20:1 reduction. The cam compresses the leg spring (4 kN/m, 4 cm stroke) over 40% of a turn, then drops the follower off its step, and the spring fires the leg. <b>Hop</b>: the wheel runs above the clutch speed (20 rad/s), so the spring winds and fires every G·f = 8 wheel turns, about every 3 s. The leg recoils to an ≈18 cm apex. <b>Stop</b> finishes the current jump, then parks the wheel at −80 rad/s so the clutch stays out: a balancing stick. <b>Somersault</b> winds with a slow wheel (30 rad/s, which keeps the gyroscopic pitch error small). In the air it brakes and reverses the wheel, flipping the body 360° about the bar in ≈0.3 s, with a guidance law that stops the rotation exactly at upright. In the air, a foot-contact switch hands the motor to a flight law: the wheel can only turn the body about ≈ the bar axis. A rebound escapement, tripped by the landing, stops it bouncing. Pushes and the grab work as usual.</div>
+      <div class="muted">The same motor balances and powers the jumps. Its shaft drives a snail cam through a centrifugal clutch, a ratchet and a 20:1 reduction. The cam compresses the leg spring (4 kN/m, 4 cm stroke) over 40% of a turn, then drops the follower off its step, and the spring fires the leg. <b>Hop</b>: the wheel runs above the clutch speed (20 rad/s), so the spring winds and fires every G·f = 8 wheel turns, about every 3 s. The leg recoils to an ≈18 cm apex. <b>Stop</b> finishes the current jump, then parks the wheel at −80 rad/s so the clutch stays out: a balancing stick. <b>Somersault</b> winds with a slow wheel (30 rad/s, which keeps the gyroscopic pitch error small). In the air it brakes and reverses the wheel, flipping the body 360° about the bar in ≈0.3 s, with a guidance law that stops the rotation exactly at upright. In the air, a foot-contact switch hands the motor to a flight law: the wheel can only turn the body about ≈ the bar axis. A rebound escapement, tripped by the landing, stops it bouncing. Sensing: <b>external sensors</b> (motion capture for tilt and rates, a load cell in the foot) feed the controllers, so the state is known in the air too. Pushes and the grab work as usual.</div>
     </div>
 
     <div class="panel" id="rollPanel" hidden>
@@ -399,6 +399,8 @@ function onTelemetry(m) {
   $("rollPanel").hidden = !state.rolling;
   $("flipPanel").hidden = !state.free;
   $("pogoPanel").hidden = !state.pogo;
+  $("subtitle").textContent = state.pogo ? "MuJoCo · external sensors (motion capture + foot load cell) · stance LQR + flight law · live"
+    : "MuJoCo · LQR + delay-compensating Kalman filter · live";
   if (state.pogo) {
     const p = state.pogo;
     $("pogoMsg").innerHTML = `<b>${p.mode} / ${p.phase}</b> · ${p.message}<br>jumps ${p.jumps} · somersaults ${p.flips} · last apex ${p.apex_cm.toFixed(1)} cm · leg ${p.leg_mm.toFixed(0)} mm · cam ${(100 * p.cam).toFixed(0)}% · clutch ${p.clutch ? "IN" : "out"} · escapement ${p.escapement ? "caught" : "free"}` + (p.flip_deg ? ` · flip ${p.flip_deg.toFixed(0)}°` : "");
