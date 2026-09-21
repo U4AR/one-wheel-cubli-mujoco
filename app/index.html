@@ -52,7 +52,7 @@
   label.sl { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin-bottom: 7px; color: var(--ink2); }
   label.sl input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
   label.sl output { font: 12px ui-monospace, monospace; color: var(--ink); }
-  select { background: var(--panel2); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 5px 6px; font: inherit; }
+  select { max-width: 100%; background: var(--panel2); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 5px 6px; font: inherit; }
   .check { display: flex; align-items: center; gap: 6px; color: var(--ink2); margin-bottom: 6px; }
   .readout { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font: 12px ui-monospace, monospace; }
   .readout span:nth-child(odd) { color: var(--ink3); font-family: system-ui, sans-serif; }
@@ -102,6 +102,11 @@
         <div><div class="log" id="log">No job output yet. Runs you start here stream their output live.</div></div>
       </div>
     </div>
+    <div class="panel" style="margin-top:12px">
+      <h2>Results &amp; media from all experiments</h2>
+      <div class="row"><button id="mediaLoad">Refresh</button><span class="muted">Figures, videos and benchmark JSON written by the scripts. Click to open full size.</span></div>
+      <div id="gallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px"></div>
+    </div>
   </section>
 
   <aside>
@@ -119,6 +124,20 @@
       <label class="sl">Force <output id="oForce"></output><input id="force" type="range" min="0.2" max="15" step="0.1" value="1.5"></label>
       <label class="sl">Duration <output id="oDur"></output><input id="dur" type="range" min="10" max="300" step="5" value="50"></label>
       <div class="muted">For scale: ~2.1–2.4 N for 50 ms on an end mass is the most it can recover from. The housing tolerates ~9–10 N.</div>
+    </div>
+
+    <div class="panel" id="flipPanel" hidden>
+      <h2>Somersault (paper cube, free body)</h2>
+      <div class="grid2">
+        <button id="doFlip" class="primary">Somersault!</button>
+        <button id="doJump">Jump-up attempt</button>
+        <button id="doSettle">Drop &amp; settle</button>
+        <button id="doStand">Stand &amp; balance</button>
+      </div>
+      <label class="sl">Spin-up wheel speed <output id="oWs"></output><input id="wspin" type="range" min="150" max="420" step="10" value="420"></label>
+      <label class="sl">Throw: drive wheel into reverse to <output id="oWr"></output><input id="wrev" type="range" min="60" max="420" step="10" value="420"></label>
+      <div class="muted" id="flipMsg"></div>
+      <div class="muted">After a fall it rolls over and rests upside down. <b>Somersault</b>: spin the wheel to 420 rad/s (the push-back only presses it into the floor), then drive it hard in reverse. The momentum dump rolls it a full turn about the bar. Reversing to only 160–260 rad/s isn't reliable (it may fall back). <b>Jump-up</b> flips it up and tries to catch it on the tip. The throw arrives within a few degrees of upright, but still moving, and the balance controller only recovers from ≈3–5°, so it falls. That's the single-wheel limit (see README). The sliders set the throw for both buttons. Space pauses; use the speed slider for slow motion.</div>
     </div>
 
     <div class="panel" id="rollPanel" hidden>
@@ -203,6 +222,7 @@
           <option value="oval_018">oval hoop 1.14×0.20 m + tip weights (≈ paper performance)</option>
           <option value="rolling_hoop">ROLLING hoop: reaction wheel + hub motor (2 motors)</option>
           <option value="rolling_single">ROLLING hoop: ONE motor (hub) + passive gyro</option>
+          <option value="somersault">SOMERSAULT: paper cube as a free body on the floor</option>
         </select></div>
       <label class="sl">End mass each [kg] <output id="oMe"></output><input id="me" type="range" min="0.15" max="0.5" step="0.01" value="0.304"></label>
       <label class="sl">Beam frequency f0 [Hz] <output id="oFb"></output><input id="fb" type="range" min="20" max="120" step="0.5" value="57.2"></label>
@@ -336,11 +356,12 @@ function onTelemetry(m) {
   for (const s of m.samples) push(s);
   state = m.state; paused = m.paused;
   $("pause").firstChild.textContent = paused ? "Resume" : "Pause";
-  if (!state.controller_on) setStatus("CONTROLLER OFF", "bad");
+  if (state.free) setStatus(state.free.phase.toUpperCase(), state.free.phase === "balance" ? "ok" : "paused");
+  else if (!state.controller_on) setStatus("CONTROLLER OFF", "bad");
   else if (state.fell) setStatus("FELL", "bad");
   else if (paused) setStatus("PAUSED", "paused");
   else setStatus("BALANCING", "ok");
-  $("fellBanner").hidden = !state.fell;
+  $("fellBanner").hidden = !state.fell || !!state.free;
   const L = buf.t.length - 1;
   if (L >= 0) {
     $("hud").innerHTML = `t = ${state.t.toFixed(2)} s   ×${m.speed.toFixed(2)}<br>α ${buf.a[L].toFixed(2)}°   β ${buf.b[L].toFixed(2)}°<br>τ ${buf.u[L].toFixed(2)} N m   ω ${buf.w[L].toFixed(0)} rad/s` +
@@ -362,6 +383,11 @@ function onTelemetry(m) {
   if (m.grab == null && !grabbing) $("grabInfo").textContent = "Not grabbing";
   $("yawOn").disabled = !state.yaw_available;
   $("rollPanel").hidden = !state.rolling;
+  $("flipPanel").hidden = !state.free;
+  if (state.free) {
+    $("flipMsg").innerHTML = `<b>${state.free.phase}</b> · ${state.free.message} · rolled ${state.free.roll_deg.toFixed(0)}° · ${state.free.tilt_from_vertical_deg.toFixed(0)}° from vertical`;
+    $("hud").innerHTML += `<br><span style="color:#ffd36b">${state.free.phase} · roll ${state.free.roll_deg.toFixed(0)}°</span>`;
+  }
   if (state.rolling) {
     const one = state.tuning.includes("ONE");
     $("vt").min = one ? -0.5 : -0.3; $("vt").max = one ? 2 : 3;
@@ -395,7 +421,8 @@ const outs = [["force", "oForce", v => v + " N"], ["dur", "oDur", v => v + " ms"
   ["speed", "oSpeed", v => "×" + (+v).toFixed(2)], ["ta", "oTa", v => v + "°"], ["tb", "oTb", v => v + "°"],
   ["noise", "oNoise", v => (+v).toFixed(2)], ["me", "oMe", v => (+v).toFixed(3)], ["fb", "oFb", v => (+v).toFixed(1)],
   ["comoff", "oCom", v => (+v).toFixed(1)], ["tilt", "oTilt", v => v + "°"], ["ecc", "oEcc", v => (+v).toFixed(1)],
-  ["head", "oHead", v => v + "°"], ["vt", "oVt", v => (+v).toFixed(1) + " m/s"]];
+  ["head", "oHead", v => v + "°"], ["vt", "oVt", v => (+v).toFixed(1) + " m/s"],
+  ["wspin", "oWs", v => v + " rad/s"], ["wrev", "oWr", v => "−" + v + " rad/s"]];
 for (const [i, o, f] of outs) { const upd = () => $(o).textContent = f($(i).value); $(i).addEventListener("input", upd); upd(); }
 
 function pulse(p) { send({ cmd: "pulse", preset: p, force: +$("force").value, duration: $("dur").value / 1000 }); }
@@ -414,6 +441,21 @@ const sendYaw = () => send({ cmd: "yaw", on: $("yawOn").checked, heading_deg: +$
 $("yawOn").onchange = sendYaw; $("head").onchange = sendYaw;
 $("plantDefault").onclick = () => { $("me").value = 0.304; $("fb").value = 57.2; $("comoff").value = 2; $("tilt").value = 0; $("ecc").value = 0; ["tilt", "ecc"].forEach(i => $(i).dispatchEvent(new Event("input"))); $("me").dispatchEvent(new Event("input")); $("fb").dispatchEvent(new Event("input")); $("comoff").dispatchEvent(new Event("input")); };
 const setV = (v) => { v = Math.max(+$("vt").min, Math.min(+$("vt").max, v)); $("vt").value = v; $("vt").dispatchEvent(new Event("input")); send({ cmd: "speed_target", speed: v }); };
+$("doFlip").onclick = () => send({ cmd: "maneuver", name: "somersault", w_spin: +$("wspin").value, w_rev: +$("wrev").value });
+$("doJump").onclick = () => send({ cmd: "maneuver", name: "jump", w_spin: +$("wspin").value, w_rev: Math.min(+$("wrev").value, 110) });
+$("doSettle").onclick = () => { for (const k in buf) buf[k].length = 0; send({ cmd: "maneuver", name: "settle" }); };
+$("doStand").onclick = () => { for (const k in buf) buf[k].length = 0; send({ cmd: "maneuver", name: "stand", tilt: 2 }); };
+async function loadGallery() {
+  const items = await (await fetch("/api/media")).json();
+  $("gallery").innerHTML = items.map(it => {
+    const cap = `<div class="muted" style="margin-top:4px;word-break:break-all">${it.name}</div>`;
+    if (it.name.endsWith(".mp4")) return `<div class="chart"><video src="${it.url}" controls muted loop playsinline style="width:100%;border-radius:6px"></video>${cap}</div>`;
+    if (it.name.endsWith(".json")) return `<div class="chart"><a href="${it.url}" target="_blank" style="color:var(--s1)">${it.name}</a><div class="muted">benchmark numbers (JSON)</div></div>`;
+    return `<div class="chart"><a href="${it.url}" target="_blank"><img src="${it.url}" loading="lazy" style="width:100%;border-radius:6px;background:#fff"></a>${cap}</div>`;
+  }).join("");
+}
+$("mediaLoad").onclick = loadGallery;
+loadGallery();
 document.querySelectorAll(".vset").forEach(b => b.onclick = () => setV(+b.dataset.v));
 $("vt").onchange = () => setV(+$("vt").value);
 $("jobTune").onclick = () => { liveTune = []; send({ cmd: "job", name: "tune", gens: +$("tuneGens").value, pop: +$("tunePop").value, warm: true }); };

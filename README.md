@@ -324,7 +324,9 @@ For this, the paper device is simulated as a **free body on the floor**, with co
 - live charts of tilt, motor torque against the available-torque envelope, wheel speed and I²t heating;
 - live switching between paper and tuned weights, CoM estimator on/off, sensor-noise level and measurement delay;
 - plant changes (end mass, beam frequency, CoM offset), applied as a model-mismatch test;
-- a "Runs & progress" panel that launches CMA-ES tuning, the benchmark or the tests and streams their progress, including a cost-per-generation chart.
+- a "Runs & progress" panel that launches CMA-ES tuning, the benchmark or the tests and streams their progress, including a cost-per-generation chart;
+- every experiment as a Plant → Layout: the paper bar, hoops, oval hoops, the rolling hoop with two motors or one motor, and the free-body **somersault** layout. The somersault layout has Somersault / Jump-up attempt / Drop & settle / Stand & balance buttons, throw sliders, and the phase and roll angle live;
+- a "Results & media" gallery with every figure, video and benchmark JSON the scripts produce.
 
 ```bash
 MUJOCO_GL=egl python app/server.py      # serves http://127.0.0.1:8765

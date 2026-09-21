@@ -25,6 +25,7 @@ from aiohttp import web, WSMsgType
 from cubli.live import LiveSim
 from cubli.live_rolling import LiveRolling
 from cubli.rolling_kane import gyro_design
+from cubli.live_somersault import LiveSomersault
 from cubli.params import NOMINAL
 from cubli.tunings import LATEST_FILE
 
@@ -35,6 +36,7 @@ PY = sys.executable
 pivot_sim = LiveSim()
 rolling_sim = None          # built on first use (~8 s: speed-scheduled controller)
 single_sim = None           # one-motor (hub + passive gyro) rolling hoop
+free_sim = None             # free-body cube on the floor (somersault)
 sim = pivot_sim
 clients: set = set()
 ctl = dict(paused=False, speed=1.0)
@@ -155,10 +157,19 @@ async def run_job(name, args):
 
 
 def handle(cmd):
-    global sim, rolling_sim, single_sim
+    global sim, rolling_sim, single_sim, free_sim
     c = cmd.get("cmd")
     if c == "pulse" and hasattr(sim, "kick"):
         sim.kick(cmd["preset"], float(cmd.get("force", 1.5)), float(cmd.get("duration", 0.05)))
+    elif c == "maneuver" and hasattr(sim, "start"):
+        name = cmd.get("name")
+        if name in ("somersault", "jump"):
+            sim.start(name, w_spin=float(cmd.get("w_spin", 420)),
+                      w_rev=None if cmd.get("w_rev") is None else float(cmd["w_rev"]))
+        elif name == "settle":
+            sim.settle()
+        elif name == "stand":
+            sim.stand(float(cmd.get("tilt", 2.0)))
     elif c == "speed_target" and hasattr(sim, "set_speed"):
         sim.set_speed(float(cmd.get("speed", 0.0)))
     elif c == "pulse":
@@ -212,6 +223,12 @@ def handle(cmd):
                 rolling_sim = LiveRolling()
             sim = rolling_sim
             sim.reset((2.0, 0.0))
+            return dict(type="layout", layout=layout)
+        if layout == "somersault":
+            if free_sim is None:
+                free_sim = LiveSomersault()
+            sim = free_sim
+            sim.settle()
             return dict(type="layout", layout=layout)
         if layout == "rolling_single":
             if single_sim is None:
@@ -278,6 +295,17 @@ async def ws_handler(request):
     return ws
 
 
+async def media_list(_):
+    """Every figure / video / result produced by the experiments, for the UI gallery."""
+    out = []
+    for folder in ("media", "results"):
+        base = os.path.join(ROOT, folder)
+        for fn in sorted(os.listdir(base)):
+            if fn.endswith((".png", ".gif", ".mp4", ".json")) and not fn.startswith("tuned_params_ui"):
+                out.append(dict(url=f"/{folder}/{fn}", name=fn, folder=folder))
+    return web.json_response(out)
+
+
 async def index(_):
     return web.FileResponse(os.path.join(ROOT, "app", "index.html"))
 
@@ -287,6 +315,8 @@ async def main():
     app.router.add_get("/", index)
     app.router.add_get("/ws", ws_handler)
     app.router.add_static("/media", os.path.join(ROOT, "media"))
+    app.router.add_static("/results", os.path.join(ROOT, "results"))
+    app.router.add_get("/api/media", media_list)
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, HOST, PORT).start()
