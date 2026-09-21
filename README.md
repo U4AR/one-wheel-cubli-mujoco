@@ -137,6 +137,27 @@ Interactive viewer:
 python -c "import mujoco.viewer; from cubli.model import load; m, d = load(); mujoco.viewer.launch(m, d)"
 ```
 
+### What if the flywheel is offset? (`scripts/wheel_offset.py`)
+
+**Tilting the wheel axis out of the horizontal plane by ζ** gives the motor torque a vertical component, and yaw becomes controllable. Vertical angular momentum is still conserved (L_z = I_z·γ̇ + I_w·sin ζ·ω), so a yaw spin can only be moved *into the wheel*: stopping 0.2 rad/s needs ω ≈ 0.05 / (I_w sin ζ).
+
+One LQR over roll, pitch and yaw at once collapses the balance gains and falls. A cascade works: the paper's balance loop stays as is, and a slow outer loop steers yaw by moving the wheel-speed setpoint (rate-limited, ±300 rad/s). Results with sensor noise and delay, no pivot friction:
+
+| tilt ζ | stop a 0.2 rad/s spin | 30° heading error | max recoverable drop |
+|---|---|---|---|
+| 0° (paper) | impossible | impossible | 2.37 N |
+| 5° | only halves it (needs 628 rad/s of wheel speed) | → 1.9° | 2.77 N |
+| 10° | → 0.012 rad/s (wheel 283 rad/s, 315 predicted) | → 1.1° | 2.62 N |
+| 15° | falls | → 1.1° | 2.02 N |
+| 20° | falls | → 1.0° | 0.82 N |
+| 25° | falls | → 0.9° | cannot balance |
+
+So about 10° of tilt buys yaw control without losing balance margin. Beyond about 15°, the roll/pitch authority lost to cos ζ and the gyroscopic coupling at high wheel speed make it fragile. With realistic pivot friction the benefit shrinks. Friction stops spins by itself, but it also destroys the momentum the wheel would need to hand back, so large heading changes run the wheel to its limit.
+
+**An off-centre wheel mass (unbalance)** does nothing useful: the rotating force averages to zero over each turn. It is also nearly harmless here, because the wheel idles near 0 rad/s while balancing. Even 4 mm of offset (0.9 g·m) only lowers the recoverable drop from 2.37 N to 2.06 N, since it only bites during recoveries when the wheel spins at hundreds of rad/s.
+
+Both are adjustable in the live viewer (Plant: wheel tilt, unbalance, pivot friction; plus a yaw-control panel).
+
 ## Live interactive viewer
 
 `app/server.py` runs the real MuJoCo plant and the full estimator/controller in real time, and streams it to your browser:

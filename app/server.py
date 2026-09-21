@@ -160,6 +160,9 @@ def handle(cmd):
         ctl["paused"] = bool(cmd["value"])
     elif c == "speed":
         ctl["speed"] = float(np.clip(cmd["value"], 0.05, 2.0))
+    elif c == "yaw":
+        sim.yaw_on = bool(cmd.get("on", sim.yaw_on))
+        sim.heading_ref = float(np.deg2rad(cmd.get("heading_deg", np.rad2deg(sim.heading_ref))))
     elif c == "controller":
         sim.controller_on = bool(cmd["value"])
     elif c == "settings":
@@ -174,7 +177,11 @@ def handle(cmd):
             sim.buf = [sim.measure()] * (new_delay + 1)
     elif c == "plant":
         # physical changes need a new model -> rebuild and reset
-        p = NOMINAL.with_(m_e=float(cmd["m_e"]), com_offset_xy=(float(cmd["com_mm"]) / 1e3,) * 2)
+        p = NOMINAL.with_(m_e=float(cmd["m_e"]), com_offset_xy=(float(cmd["com_mm"]) / 1e3,) * 2,
+                          wheel_tilt=float(np.deg2rad(cmd.get("tilt_deg", 0.0))),
+                          wheel_ecc=float(cmd.get("ecc_mm", 0.0)) / 1e3)
+        if not cmd.get("pivot_friction", True):
+            p = p.with_(yaw_friction=0.0, yaw_damping=0.0)
         p = p.with_(k=p.k_from_freq(float(cmd["f_beam"])))
         sim.plant = p
         sim.build()

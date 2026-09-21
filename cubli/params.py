@@ -17,6 +17,9 @@ class CubliParams:
     l_Q: float = 0.214        # pivot -> cantilever attachment Q
     l_E: float = 0.5975       # Q -> end masses E1, E2 (along body x)
     eta: float = np.pi / 4    # wheel axis angle w.r.t. body x, about body z
+    # --- design variations (not in the paper; 0 = paper design) -----------------
+    wheel_tilt: float = 0.0   # rad, wheel axis tilted up out of the x-y plane
+    wheel_ecc: float = 0.0    # m, radial offset of the wheel's centre of mass (unbalance)
 
     # masses (kg)
     m_h: float = 1.101        # housing (incl. motor, electronics, beam)

@@ -162,12 +162,22 @@
     </div>
 
     <div class="panel">
+      <h2>Yaw (needs a tilted wheel)</h2>
+      <div class="check"><input type="checkbox" id="yawOn"><label for="yawOn">Yaw control: heading hold / stop spin</label></div>
+      <label class="sl">Heading target <output id="oHead"></output><input id="head" type="range" min="-180" max="180" step="5" value="0"></label>
+      <div class="muted">With a tilted wheel, vertical spin can be moved into the wheel: I_z·γ̇ + I_w·sin(tilt)·ω stays constant. A slow outer loop sets the wheel-speed target, and the balance loop tracks it. Try tilt 10° in Plant with pivot friction off, apply, tick this, then tap sideways (T): the spin stops and the wheel keeps the momentum. With friction on, friction stops the spin first, and the wheel can't hand momentum back to turn the body, so heading control is limited. Works best at 5–15° tilt. Above ~20° balancing suffers.</div>
+    </div>
+
+    <div class="panel">
       <h2>Plant (physics)</h2>
       <label class="sl">End mass each [kg] <output id="oMe"></output><input id="me" type="range" min="0.15" max="0.5" step="0.01" value="0.304"></label>
       <label class="sl">Beam frequency f0 [Hz] <output id="oFb"></output><input id="fb" type="range" min="20" max="120" step="0.5" value="57.2"></label>
       <label class="sl">CoM offset toward motor [mm] <output id="oCom"></output><input id="comoff" type="range" min="0" max="8" step="0.5" value="2"></label>
+      <label class="sl">Wheel axis tilt out of plane [deg] <output id="oTilt"></output><input id="tilt" type="range" min="0" max="25" step="1" value="0"></label>
+      <label class="sl">Wheel mass offset (unbalance) [mm] <output id="oEcc"></output><input id="ecc" type="range" min="0" max="4" step="0.1" value="0"></label>
+      <div class="check"><input type="checkbox" id="pfric" checked><label for="pfric">Pivot friction in yaw (a real corner on a table)</label></div>
       <div class="row"><button id="applyPlant" class="primary">Apply &amp; reset</button><button id="plantDefault">Paper values</button></div>
-      <div class="muted">The controller always assumes the paper's CAD model, so this is a model-mismatch test.</div>
+      <div class="muted">End mass, beam and CoM are model-mismatch tests: the controller still assumes the paper's values. Wheel tilt is a design change, and the controller is redesigned for it. Paper values: tilt 0, unbalance 0.</div>
     </div>
 
     <div class="panel">
@@ -303,11 +313,12 @@ function onTelemetry(m) {
       (m.grab != null ? `<br><span style="color:#6fe0ff">grab force ${m.grab.toFixed(1)} N</span>` : "");
     $("readout").innerHTML = [
       ["time", state.t.toFixed(2) + " s"], ["roll α", buf.a[L].toFixed(3) + "°"], ["pitch β", buf.b[L].toFixed(3) + "°"],
-      ["yaw γ", state.gamma_deg.toFixed(2) + "°"], ["torque", buf.u[L].toFixed(3) + " N m"],
+      ["yaw γ", state.gamma_deg.toFixed(2) + "°" + (state.yaw_on ? `  → target ${state.heading_ref_deg.toFixed(0)}°` : "")],
+      ["wheel target", state.wheel_ref.toFixed(0) + " rad/s"], ["torque", buf.u[L].toFixed(3) + " N m"],
       ["available", buf.lim[L].toFixed(2) + " N m"], ["wheel", buf.w[L].toFixed(1) + " rad/s"],
       ["I²t", buf.heat[L].toFixed(1) + " %"], ["CoM estimate", state.com_est_deg.map(v => v.toFixed(2) + "°").join(", ")],
       ["beam δ1, δ2", state.beam_mrad.map(v => v.toFixed(3)).join(", ") + " mrad"],
-      ["weights", state.tuning], ["plant", `mₑ ${state.plant.m_e.toFixed(3)} kg, f0 ${state.plant.f_beam.toFixed(1)} Hz, CoM ${state.plant.com_offset_mm.toFixed(1)} mm`],
+      ["weights", state.tuning], ["plant", `mₑ ${state.plant.m_e.toFixed(3)} kg, f0 ${state.plant.f_beam.toFixed(1)} Hz, CoM ${state.plant.com_offset_mm.toFixed(1)} mm, tilt ${state.plant.tilt_deg.toFixed(0)}°, unbalance ${state.plant.ecc_mm.toFixed(1)} mm`],
     ].map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join("");
   }
   if (m.grab == null && !grabbing) $("grabInfo").textContent = "Not grabbing";
@@ -332,7 +343,8 @@ function onJob(m) {
 const outs = [["force", "oForce", v => v + " N"], ["dur", "oDur", v => v + " ms"], ["gk", "oK", v => v + " N/m"],
   ["speed", "oSpeed", v => "×" + (+v).toFixed(2)], ["ta", "oTa", v => v + "°"], ["tb", "oTb", v => v + "°"],
   ["noise", "oNoise", v => (+v).toFixed(2)], ["me", "oMe", v => (+v).toFixed(3)], ["fb", "oFb", v => (+v).toFixed(1)],
-  ["comoff", "oCom", v => (+v).toFixed(1)]];
+  ["comoff", "oCom", v => (+v).toFixed(1)], ["tilt", "oTilt", v => v + "°"], ["ecc", "oEcc", v => (+v).toFixed(1)],
+  ["head", "oHead", v => v + "°"]];
 for (const [i, o, f] of outs) { const upd = () => $(o).textContent = f($(i).value); $(i).addEventListener("input", upd); upd(); }
 
 function pulse(p) { send({ cmd: "pulse", preset: p, force: +$("force").value, duration: $("dur").value / 1000 }); }
@@ -346,8 +358,10 @@ $("ctrlOn").onchange = () => send({ cmd: "controller", value: $("ctrlOn").checke
 const sendSettings = () => send({ cmd: "settings", tuning: $("tuning").value, com_enable: $("com").checked, noise: +$("noise").value, delay: +$("delay").value });
 ["tuning", "com", "delay"].forEach(id => $(id).onchange = sendSettings);
 $("noise").onchange = sendSettings;
-$("applyPlant").onclick = () => { for (const k in buf) buf[k].length = 0; send({ cmd: "plant", m_e: +$("me").value, f_beam: +$("fb").value, com_mm: +$("comoff").value }); };
-$("plantDefault").onclick = () => { $("me").value = 0.304; $("fb").value = 57.2; $("comoff").value = 2; $("me").dispatchEvent(new Event("input")); $("fb").dispatchEvent(new Event("input")); $("comoff").dispatchEvent(new Event("input")); };
+$("applyPlant").onclick = () => { for (const k in buf) buf[k].length = 0; send({ cmd: "plant", m_e: +$("me").value, f_beam: +$("fb").value, com_mm: +$("comoff").value, tilt_deg: +$("tilt").value, ecc_mm: +$("ecc").value, pivot_friction: $("pfric").checked }); };
+const sendYaw = () => send({ cmd: "yaw", on: $("yawOn").checked, heading_deg: +$("head").value });
+$("yawOn").onchange = sendYaw; $("head").onchange = sendYaw;
+$("plantDefault").onclick = () => { $("me").value = 0.304; $("fb").value = 57.2; $("comoff").value = 2; $("tilt").value = 0; $("ecc").value = 0; ["tilt", "ecc"].forEach(i => $(i).dispatchEvent(new Event("input"))); $("me").dispatchEvent(new Event("input")); $("fb").dispatchEvent(new Event("input")); $("comoff").dispatchEvent(new Event("input")); };
 $("jobTune").onclick = () => { liveTune = []; send({ cmd: "job", name: "tune", gens: +$("tuneGens").value, pop: +$("tunePop").value, warm: true }); };
 $("jobBench").onclick = () => send({ cmd: "job", name: "benchmark" });
 $("jobTests").onclick = () => send({ cmd: "job", name: "tests" });

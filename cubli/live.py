@@ -25,6 +25,8 @@ class LiveSim:
         self.plant = NOMINAL
         self.tuning_name = "tuned"
         self.com_enable = True
+        self.yaw_on = False           # yaw loop through the wheel-speed setpoint
+        self.heading_ref = 0.0        # rad
         self.noise_scale = 1.0
         self.delay_steps = 1
         self.controller_on = True
@@ -60,7 +62,7 @@ class LiveSim:
 
     def make_controller(self):
         t = replace(get(self.tuning_name), com_enable=self.com_enable)
-        self.ctrl = Controller(self.plant.with_(com_offset_xy=(0.0, 0.0)), t, self.Ts)
+        self.ctrl = Controller(self.plant.with_(com_offset_xy=(0.0, 0.0), wheel_ecc=0.0), t, self.Ts)
 
     def reset(self, tilt_deg=(2.0, -1.5)):
         mujoco.mj_resetData(self.m, self.d)
@@ -76,6 +78,8 @@ class LiveSim:
         self.pulses = []          # [t_end, body_id, force(3)]
         self.grab = None          # dict(body, local point, force)
         self.fell = False
+        self.gamma_hat = 0.0          # heading from integrated gyro (starts at truth)
+        self.w_ref = 0.0
         self.u = self.ulim = 0.0
         self.samples = []
 
@@ -102,7 +106,21 @@ class LiveSim:
         self._update_grab_force()
         self.buf.append(self.measure()); self.buf.pop(0)
         if self.controller_on and not self.fell:
-            u_cmd = self.ctrl.step(*self.buf[0])
+            acc, gyr, ws = self.buf[0]
+            yaw_rate = gyr.mean(0)[2]
+            self.gamma_hat += yaw_rate * self.Ts
+            zeta = self.plant.wheel_tilt
+            if self.yaw_on and abs(np.sin(zeta)) > 1e-3:
+                # L_z = I_z*gamma_d + I_w*sin(zeta)*phi_d is conserved -> the
+                # wheel-speed setpoint sets the yaw rate (see scripts/wheel_offset.py)
+                p = self.plant
+                k_yaw = (p.I_hz + 2 * p.m_e * p.l_E**2 + p.I_wy) / (p.I_wx * np.sin(zeta))
+                err = (self.gamma_hat - self.heading_ref + np.pi) % (2 * np.pi) - np.pi
+                target = float(np.clip(ws + k_yaw * (yaw_rate + 0.3 * err), -380, 380))
+                self.w_ref += float(np.clip(target - self.w_ref, -20 * self.Ts, 20 * self.Ts))
+            else:
+                self.w_ref += float(np.clip(-self.w_ref, -10 * self.Ts, 10 * self.Ts))
+            u_cmd = self.ctrl.step(acc, gyr, ws - self.w_ref)
             self.u, self.ulim = self.motor.limit(u_cmd, d.qvel[self.vid["phi"]], self.Ts)
             self.ctrl.applied(self.u)
         else:
@@ -134,11 +152,14 @@ class LiveSim:
         d = self.d
         return dict(t=d.time, fell=self.fell, tuning=self.tuning_name,
                     com_enable=self.com_enable, noise=self.noise_scale,
+                    yaw_on=self.yaw_on, heading_ref_deg=float(np.rad2deg(self.heading_ref)),
+                    heading_est_deg=float(np.rad2deg(self.gamma_hat)), wheel_ref=self.w_ref,
                     delay=self.delay_steps, controller_on=self.controller_on,
                     com_est_deg=np.rad2deg(self.ctrl.com).tolist(),
                     gamma_deg=float(np.rad2deg(d.qpos[self.jid["gamma"]])),
                     beam_mrad=[1e3 * d.qpos[self.jid["delta1"]], 1e3 * d.qpos[self.jid["delta2"]]],
-                    plant=dict(m_e=self.plant.m_e, f_beam=self.plant.beam_freq_hz(),
+                    plant=dict(tilt_deg=float(np.rad2deg(self.plant.wheel_tilt)),
+                               ecc_mm=1e3 * self.plant.wheel_ecc, m_e=self.plant.m_e, f_beam=self.plant.beam_freq_hz(),
                                com_offset_mm=1e3 * self.plant.com_offset_xy[0]))
 
     # ------------------------------------------------------------ interaction

@@ -41,6 +41,11 @@ def build_xml(p: CubliParams = NOMINAL, timestep=5e-4, ground_limits=False) -> s
     Ihy = p.I_hy - p.m_h * (p.l_S**2 + cx**2)
     Ihz = p.I_hz - p.m_h * (cx**2 + cy**2)
     wq = f"{np.cos(p.eta/2)} 0 0 {np.sin(p.eta/2)}"  # rotate D about z by eta
+    # wheel frame: rotate by eta about z, then tilt the spin axis up by wheel_tilt
+    q = np.zeros(4)
+    mujoco.mju_mulQuat(q, np.array([np.cos(p.eta/2), 0, 0, np.sin(p.eta/2)]),
+                       np.array([np.cos(-p.wheel_tilt/2), 0, np.sin(-p.wheel_tilt/2), 0]))
+    wheel_q = " ".join(f"{v}" for v in q)
     tiny = 1e-8
     # The paper's wheel inertia includes the motor rotor, so I_wx > I_wy + I_wz,
     # which a single rigid body cannot have. Inflate the transverse inertia just
@@ -97,9 +102,9 @@ def build_xml(p: CubliParams = NOMINAL, timestep=5e-4, ground_limits=False) -> s
       <geom type="cylinder" fromto="0 0 {p.l_Q-0.02} 0 0 {p.l_Q+0.005}" size="0.018" material="alu" contype="0" conaffinity="0"/>
       <geom type="box" pos="0 0 {p.l_P}" size="0.003 0.05 0.05" quat="{wq}" material="alu" contype="0" conaffinity="0"/>
 {imu_sites}
-      <body name="wheel" pos="0 0 {p.l_P}" quat="{wq}">
+      <body name="wheel" pos="0 0 {p.l_P}" quat="{wheel_q}">
         <joint name="phi" type="hinge" axis="1 0 0" limited="false"/>
-        <inertial pos="0 0 0" mass="{p.m_w}" diaginertia="{p.I_wx} {Iwt} {Iwt}"/>
+        <inertial pos="0 {p.wheel_ecc} 0" mass="{p.m_w}" diaginertia="{p.I_wx} {Iwt} {Iwt}"/>
         <geom type="cylinder" fromto="0.012 0 0 0.024 0 0" size="0.068" material="wheel" contype="0" conaffinity="0"/>
         <geom type="box" pos="0.0185 0 0.04" size="0.007 0.01 0.02" rgba="1 1 1 1" contype="0" conaffinity="0"/>
       </body>
