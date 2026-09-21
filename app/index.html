@@ -165,7 +165,7 @@
       <h2>Yaw (needs a tilted wheel)</h2>
       <div class="check"><input type="checkbox" id="yawOn"><label for="yawOn">Yaw control: heading hold / stop spin</label></div>
       <label class="sl">Heading target <output id="oHead"></output><input id="head" type="range" min="-180" max="180" step="5" value="0"></label>
-      <div class="muted">With a tilted wheel, vertical spin can be moved into the wheel: I_z·γ̇ + I_w·sin(tilt)·ω stays constant. A slow outer loop sets the wheel-speed target, and the balance loop tracks it. Try tilt 10° in Plant with pivot friction off, apply, tick this, then tap sideways (T): the spin stops and the wheel keeps the momentum. With friction on, friction stops the spin first, and the wheel can't hand momentum back to turn the body, so heading control is limited. Works best at 5–15° tilt. Above ~20° balancing suffers.</div>
+      <div class="muted">With a tilted wheel, vertical spin can be moved into the wheel: I_z·γ̇ + I_w·sin(tilt)·ω stays constant. A slow outer loop sets the wheel-speed target, and the balance loop tracks it. Try tilt 10° in Plant with pivot friction off, apply, tick this, then tap sideways (T): the spin stops and the wheel keeps the momentum. With friction on, friction stops the spin first, and the wheel can't hand momentum back to turn the body, so heading control is limited. Priorities: balance > stop the spin > heading. Heading correction fades out as the wheel nears its 250 rad/s budget. Works best at 5–15° tilt. Above ~20° balancing suffers.</div>
     </div>
 
     <div class="panel">

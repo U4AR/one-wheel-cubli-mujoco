@@ -116,8 +116,14 @@ class LiveSim:
                 p = self.plant
                 k_yaw = (p.I_hz + 2 * p.m_e * p.l_E**2 + p.I_wy) / (p.I_wx * np.sin(zeta))
                 err = (self.gamma_hat - self.heading_ref + np.pi) % (2 * np.pi) - np.pi
-                target = float(np.clip(ws + k_yaw * (yaw_rate + 0.3 * err), -380, 380))
-                self.w_ref += float(np.clip(target - self.w_ref, -20 * self.Ts, 20 * self.Ts))
+                err = float(np.clip(err, -0.35, 0.35))   # big heading errors: turn slowly
+                # priorities: balance > stop the spin > heading. Heading correction
+                # fades out as the wheel approaches its momentum budget, and the
+                # target keeps ~200 rad/s of the 450 rad/s in reserve for balancing
+                # (the balance loop tracks the target loosely and overshoots).
+                headroom = float(np.clip((200.0 - abs(ws)) / 100.0, 0.0, 1.0))
+                target = float(np.clip(ws + k_yaw * (yaw_rate + 0.3 * headroom * err), -250, 250))
+                self.w_ref += float(np.clip(target - self.w_ref, -10 * self.Ts, 10 * self.Ts))
             else:
                 self.w_ref += float(np.clip(-self.w_ref, -10 * self.Ts, 10 * self.Ts))
             u_cmd = self.ctrl.step(acc, gyr, ws - self.w_ref)
