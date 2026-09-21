@@ -12,11 +12,15 @@ from .params import NOMINAL as P
 
 
 class LivePogo(LiveRolling):
-    def __init__(self, width=960, height=540, Ts=0.01, dt=5e-4):
+    def __init__(self, width=960, height=540, Ts=None, dt=5e-4, pp=None):
+        self.pp = pp or PogoParams()
+        Ts = self.pp.Ts if Ts is None else Ts
         self.W, self.H, self.Ts, self.dt = width, height, Ts, dt
+        self.small = self.pp.hw is not None
         self.plant = types.SimpleNamespace(layout="pogo", ring_radius=0.0, m_e=P.m_e, beam_freq_hz=lambda: 0.0,
                                            com_offset_xy=(0.0, 0.0), wheel_tilt=0.0, wheel_ecc=0.0)
-        self.tuning_name = "pogo: stance LQR + flight law + flip guidance (external sensors)"
+        self.tuning_name = ("small drone-parts pogo: stance LQR + flight law + flip guidance + get-up (external sensors)"
+                            if self.small else "pogo: stance LQR + flight law + flip guidance (external sensors)")
         self.com_enable, self.noise_scale, self.delay_steps = False, 1.0, 1
         self.controller_on, self.yaw_on, self.yaw, self.heading_ref = True, False, None, 0.0
         self.renderer = None
@@ -28,11 +32,12 @@ class LivePogo(LiveRolling):
 
     def reset_camera(self):
         self.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-        self.cam.distance, self.cam.azimuth, self.cam.elevation = 2.4, 15.0, -10.0
-        self.cam.lookat[:] = [0.0, 0.0, 0.25]
+        s = 0.5 if getattr(self, "small", False) else 1.0
+        self.cam.distance, self.cam.azimuth, self.cam.elevation = 2.4 * s, 20.0, -12.0
+        self.cam.lookat[:] = [0.0, 0.0, 0.25 * s]
 
     def build(self):
-        self.pogo = PogoSim(PogoParams(), dt=self.dt, Ts=self.Ts, seed=int(self.rng.integers(1 << 30)))
+        self.pogo = PogoSim(self.pp, dt=self.dt, Ts=self.Ts, seed=int(self.rng.integers(1 << 30)))
         self.pogo.substep_hook = self._apply_external
         self.m, self.d = self.pogo.m, self.pogo.d
         if self.renderer is not None:
@@ -52,6 +57,11 @@ class LivePogo(LiveRolling):
         if self.fell:
             self.reset()
         self.pogo.set_mode(name)
+        if name == "knock":
+            push = 1.2 if self.small else 12.0
+            self.pulse("cubli", np.array([0.0, push, 0.0]), 0.1)
+            self.message = "knocked over: it will land on a skid / battery pod and get up by itself"
+            return
         self.message = dict(hop="hopping: wheel above the clutch speed winds the spring, the cam fires it",
                             stop="stopping: finishing the current jump, then back to a stick",
                             stick="stick: wheel parked below the clutch speed",
@@ -104,11 +114,17 @@ class LivePogo(LiveRolling):
         pg = self.pogo
         s = pg.state()
         if not self.fell:
-            if pg.flipping:
+            if s["phase"] == "getup":
+                self.message = "getting up: wheel drives the roll rate onto the coast-to-upright curve"
+            elif s["phase"] == "vault":
+                self.message = "hop forward: landed with the foot ahead, lifting back over it"
+            elif pg.fwd and s["mode"] == "hop":
+                self.message = "hopping forward (experimental): foot lands 6 deg ahead in each hop"
+            elif pg.flipping:
                 self.message = "somersault: flipping about the bar in the air"
             elif pg.flip_request:
                 self.message = "somersault: winding with a slow wheel (small gyroscopic pitch error)"
-            elif s["mode"] == "hop":
+            elif s["mode"] == "hop" and not pg.fwd:
                 self.message = "hopping: wheel above the clutch speed winds the spring, the cam fires it"
             elif s["mode"] == "stop":
                 self.message = "stopping: finishing the current jump, then back to a stick"
@@ -129,14 +145,18 @@ class LivePogo(LiveRolling):
                               airborne=bool(s["airborne"]), wheel=float(s["wheel"]),
                               clutch=bool(s["wheel"] > pg.pp.w_clutch), w_hop=float(pg.w_hop),
                               flip_deg=float(np.rad2deg(pg.flip_angle)) if pg.flipping else 0.0,
-                              escapement=bool(pg.latched), message=self.message))
+                              escapement=bool(pg.latched), message=self.message,
+                              small=self.small, getups=int(pg.getups), down=bool(s["down"]),
+                              energy_mWh=1000 * float(s["energy_Wh"]),
+                              battery_pct=(100 * (1 - float(s["energy_Wh"]) / pg.pp.hw.battery.Wh)) if self.small else None,
+                              fwd=int(pg.fwd), y_cm=100 * float(s["y"]), x_cm=100 * float(s["x"])))
 
     # ----------------------------------------------------------- rendering
     def render_jpeg(self, quality=80):
         from PIL import Image
         d = self.d
         com = d.xipos[self.pogo.body]
-        target = np.array([com[0], com[1], 0.25])
+        target = np.array([com[0], com[1], 0.12 if self.small else 0.25])
         if np.linalg.norm(target - self.cam.lookat) > 1.0:
             self.cam.lookat[:] = target
         self.cam.lookat[:] = 0.8 * np.asarray(self.cam.lookat) + 0.2 * target

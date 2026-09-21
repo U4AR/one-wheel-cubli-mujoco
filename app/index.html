@@ -147,10 +147,12 @@
         <button id="pgStop">Stop → stick<kbd>X</kbd></button>
         <button id="pgFlip" class="primary">Somersault<kbd>F</kbd></button>
         <button id="pgStick">Stick now</button>
+        <button id="pgFwd">Hop forward<kbd>G</kbd></button>
+        <button id="pgKnock" class="danger">Knock over<kbd>K</kbd></button>
       </div>
       <label class="sl">Hop wheel speed <output id="oHs"></output><input id="hs" type="range" min="40" max="100" step="5" value="60"></label>
       <div class="muted" id="pogoMsg"></div>
-      <div class="muted">The same motor balances and powers the jumps. Its shaft drives a snail cam through a centrifugal clutch, a ratchet and a 20:1 reduction. The cam compresses the leg spring (4 kN/m, 4 cm stroke) over 40% of a turn, then drops the follower off its step, and the spring fires the leg. <b>Hop</b>: the wheel runs above the clutch speed (20 rad/s), so the spring winds and fires every G·f = 8 wheel turns, about every 3 s. The leg recoils to an ≈18 cm apex. <b>Stop</b> finishes the current jump, then parks the wheel at −80 rad/s so the clutch stays out: a balancing stick. <b>Somersault</b> winds with a slow wheel (30 rad/s, which keeps the gyroscopic pitch error small). In the air it brakes and reverses the wheel, flipping the body 360° about the bar in ≈0.3 s, with a guidance law that stops the rotation exactly at upright. In the air, a foot-contact switch hands the motor to a flight law: the wheel can only turn the body about ≈ the bar axis. A rebound escapement, tripped by the landing, stops it bouncing. Sensing: <b>external sensors</b> (motion capture for tilt and rates, a load cell in the foot) feed the controllers, so the state is known in the air too. Pushes and the grab work as usual.</div>
+      <div class="muted">The same motor balances and powers the jumps. Its shaft drives a snail cam through a centrifugal clutch, a ratchet and a 20:1 reduction. The cam compresses the leg spring (4 kN/m, 4 cm stroke) over 40% of a turn, then drops the follower off its step, and the spring fires the leg. <b>Hop</b>: the wheel runs above the clutch speed (20 rad/s), so the spring winds and fires every G·f = 8 wheel turns, about every 3 s. The leg recoils to an ≈18 cm apex. <b>Stop</b> finishes the current jump, then parks the wheel at −80 rad/s so the clutch stays out: a balancing stick. <b>Somersault</b> winds with a slow wheel (30 rad/s, which keeps the gyroscopic pitch error small). In the air it brakes and reverses the wheel, flipping the body 360° about the bar in ≈0.3 s, with a guidance law that stops the rotation exactly at upright. In the air, a foot-contact switch hands the motor to a flight law: the wheel can only turn the body about ≈ the bar axis. A rebound escapement, tripped by the landing, stops it bouncing. <b>POGO SMALL</b> is the buildable version: 0.9 m span, 0.30 kg, about $110 of drone parts (2806 motor, small FOC board, 2x 3S 450 mAh LiPos as the end weights, steel-ring flywheel, printed cam and gears). Short skids and the battery pods are kickstands: a fall ends leaning on one, and the wheel lifts it back up. <b>Hop forward</b> is experimental. Sensing: <b>external sensors</b> (motion capture for tilt and rates, a load cell in the foot) feed the controllers, so the state is known in the air too. Pushes and the grab work as usual.</div>
     </div>
 
     <div class="panel" id="rollPanel" hidden>
@@ -237,6 +239,7 @@
           <option value="rolling_single">ROLLING hoop: ONE motor (hub) + passive gyro</option>
           <option value="somersault">SOMERSAULT: paper cube as a free body on the floor</option>
           <option value="pogo">POGO cross: one motor balances AND winds/fires a spring leg</option>
+          <option value="pogo_small">POGO SMALL: buildable 0.3 kg drone-parts robot (~$110), gets up after falls</option>
         </select></div>
       <label class="sl">End mass each [kg] <output id="oMe"></output><input id="me" type="range" min="0.15" max="0.5" step="0.01" value="0.304"></label>
       <label class="sl">Beam frequency f0 [Hz] <output id="oFb"></output><input id="fb" type="range" min="20" max="120" step="0.5" value="57.2"></label>
@@ -403,7 +406,8 @@ function onTelemetry(m) {
     : "MuJoCo · LQR + delay-compensating Kalman filter · live";
   if (state.pogo) {
     const p = state.pogo;
-    $("pogoMsg").innerHTML = `<b>${p.mode} / ${p.phase}</b> · ${p.message}<br>jumps ${p.jumps} · somersaults ${p.flips} · last apex ${p.apex_cm.toFixed(1)} cm · leg ${p.leg_mm.toFixed(0)} mm · cam ${(100 * p.cam).toFixed(0)}% · clutch ${p.clutch ? "IN" : "out"} · escapement ${p.escapement ? "caught" : "free"}` + (p.flip_deg ? ` · flip ${p.flip_deg.toFixed(0)}°` : "");
+    $("pogoMsg").innerHTML = `<b>${p.mode} / ${p.phase}</b> · ${p.message}<br>jumps ${p.jumps} · somersaults ${p.flips} · get-ups ${p.getups} · last apex ${p.apex_cm.toFixed(1)} cm · leg ${p.leg_mm.toFixed(0)} mm · cam ${(100 * p.cam).toFixed(0)}% · clutch ${p.clutch ? "IN" : "out"} · escapement ${p.escapement ? "caught" : "free"}` + (p.flip_deg ? ` · flip ${p.flip_deg.toFixed(0)}°` : "") + (p.down ? " · <b>resting on a stop</b>" : "") + (p.small ? `<br>battery ${p.battery_pct.toFixed(1)}% (${p.energy_mWh.toFixed(0)} mWh used of 10 Wh) · position x ${p.x_cm.toFixed(0)} cm, y ${p.y_cm.toFixed(0)} cm` : "");
+    $("pgFwd").hidden = $("pgKnock").hidden = !p.small;
     $("hud").innerHTML += `<br><span style="color:#ffd36b">${p.mode}/${p.phase} · jumps ${p.jumps} · flips ${p.flips}${p.airborne ? " · airborne" : ""}</span>`;
   }
   if (state.free) {
@@ -469,6 +473,8 @@ $("pgHop").onclick = () => send({ cmd: "maneuver", name: "hop" });
 $("pgStop").onclick = () => send({ cmd: "maneuver", name: "stop" });
 $("pgStick").onclick = () => send({ cmd: "maneuver", name: "stick" });
 $("pgFlip").onclick = () => send({ cmd: "maneuver", name: "flip" });
+$("pgFwd").onclick = () => send({ cmd: "maneuver", name: "hop_fwd" });
+$("pgKnock").onclick = () => send({ cmd: "maneuver", name: "knock" });
 $("hs").onchange = () => send({ cmd: "speed_target", speed: +$("hs").value });
 $("doSettle").onclick = () => { for (const k in buf) buf[k].length = 0; send({ cmd: "maneuver", name: "settle" }); };
 $("doStand").onclick = () => { for (const k in buf) buf[k].length = 0; send({ cmd: "maneuver", name: "stand", tilt: 2 }); };
@@ -495,8 +501,8 @@ document.addEventListener("keydown", (e) => {
   if (state && state.rolling && (e.key === "w" || e.key === "s" || e.key === "x")) {
     setV(e.key === "x" ? 0 : +$("vt").value + (e.key === "w" ? 0.25 : -0.25)); e.preventDefault(); return;
   }
-  if (state && state.pogo && (e.key === "h" || e.key === "x" || e.key === "f")) {
-    send({ cmd: "maneuver", name: { h: "hop", x: "stop", f: "flip" }[e.key] }); e.preventDefault(); return;
+  if (state && state.pogo && ["h", "x", "f", "g", "k"].includes(e.key)) {
+    send({ cmd: "maneuver", name: { h: "hop", x: "stop", f: "flip", g: "hop_fwd", k: "knock" }[e.key] }); e.preventDefault(); return;
   }
   const map = { ArrowLeft: "push_ny", ArrowRight: "push_py", ArrowUp: "push_px", ArrowDown: "push_nx", q: "drop_left", e: "drop_right", t: "twist" };
   if (map[e.key]) { pulse(map[e.key]); e.preventDefault(); }

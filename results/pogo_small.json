@@ -1,0 +1,651 @@
+{
+ "bom": {
+  "parts": [
+   {
+    "name": "housing: printed PETG cube 75 mm + 2 CF plates",
+    "mass_g": 25.0,
+    "cost_usd": 4,
+    "note": ""
+   },
+   {
+    "name": "tip pyramid struts (printed)",
+    "mass_g": 4.0,
+    "cost_usd": 0.0,
+    "note": ""
+   },
+   {
+    "name": "motor stator + mount",
+    "mass_g": 28.0,
+    "cost_usd": 20,
+    "note": "2806-class drone outrunner, KV1300 (~48 g, e.g. for 6-7 in props)"
+   },
+   {
+    "name": "FOC motor board (placed opposite the gearbox to trim the CoM)",
+    "mass_g": 10.0,
+    "cost_usd": 20,
+    "note": "small FOC board, ~40 A peak (e.g. ST B-G431B-ESC1 discovery kit or a SimpleFOC-type board)"
+   },
+   {
+    "name": "ESP32-C3 (radio link for the external tracking) + IMU",
+    "mass_g": 5.0,
+    "cost_usd": 6,
+    "note": ""
+   },
+   {
+    "name": "winding drivetrain: clutch, sprag bearing, 20:1 printed gears, cam, follower",
+    "mass_g": 16.0,
+    "cost_usd": 8,
+    "note": ""
+   },
+   {
+    "name": "leg: guide, 2 bushings, spring, escapement (pawl, rack, rotary damper)",
+    "mass_g": 12.0,
+    "cost_usd": 8,
+    "note": ""
+   },
+   {
+    "name": "cantilever: CF tube 8 mm x 0.9 m",
+    "mass_g": 15.0,
+    "cost_usd": 6,
+    "note": ""
+   },
+   {
+    "name": "pod drop strut L (CF rod)",
+    "mass_g": 2.0,
+    "cost_usd": 0.0,
+    "note": ""
+   },
+   {
+    "name": "pod drop strut R (CF rod)",
+    "mass_g": 2.0,
+    "cost_usd": 0.0,
+    "note": ""
+   },
+   {
+    "name": "battery pod L (3S LiPo + printed clip)",
+    "mass_g": 44.0,
+    "cost_usd": 9,
+    "note": "3S 450 mAh 75C LiPo (~57x31x19 mm, ~40 g)"
+   },
+   {
+    "name": "battery pod R (3S LiPo + printed clip)",
+    "mass_g": 44.0,
+    "cost_usd": 9,
+    "note": "3S 450 mAh 75C LiPo (~57x31x19 mm, ~40 g)"
+   },
+   {
+    "name": "roll skid +y (CF rod, rubber tip)",
+    "mass_g": 2.0,
+    "cost_usd": 1,
+    "note": ""
+   },
+   {
+    "name": "roll skid -y (CF rod, rubber tip)",
+    "mass_g": 2.0,
+    "cost_usd": 1,
+    "note": ""
+   },
+   {
+    "name": "harness, XT30 connectors, switch",
+    "mass_g": 8.0,
+    "cost_usd": 4,
+    "note": ""
+   },
+   {
+    "name": "tracking markers / AprilTag plate",
+    "mass_g": 2.0,
+    "cost_usd": 1,
+    "note": ""
+   },
+   {
+    "name": "flywheel: steel ring OD60/ID48 x 6 mm (bolted to the motor bell)",
+    "mass_g": 52.9,
+    "cost_usd": 3,
+    "note": "I = 40.7 g cm^2 incl. rotor bell"
+   },
+   {
+    "name": "foot slider + rubber foot",
+    "mass_g": 8.0,
+    "cost_usd": 1,
+    "note": ""
+   },
+   {
+    "name": "bearings, screws, spring, line, glue",
+    "mass_g": 0.0,
+    "cost_usd": 8,
+    "note": ""
+   }
+  ],
+  "total_mass_kg": 0.302,
+  "total_cost_usd": 109,
+  "span_m": 0.9,
+  "body_com_m": [
+   -0.0,
+   -0.0,
+   0.0515
+  ],
+  "flywheel": {
+   "I_kg_m2": 4.07e-05,
+   "mass_g": 72.9,
+   "software_speed_limit_rad_s": 1000.0,
+   "rim_speed_at_limit_m_s": 30.0,
+   "energy_at_limit_J": 20.4
+  },
+  "motor": {
+   "kt_Nm_per_A": 0.00735,
+   "peak_torque_Nm": 0.294,
+   "cont_torque_Nm": 0.088,
+   "no_load_rad_s": 1511,
+   "stall_line_Nm": 1.25
+  },
+  "battery": {
+   "pack": "3S 450 mAh 75C LiPo (~57x31x19 mm, ~40 g)",
+   "packs": 2,
+   "energy_Wh": 10.0
+  },
+  "spring": {
+   "k_N_per_mm": 2.0,
+   "preload_N": 20.0,
+   "max_N": 60.0,
+   "stored_J": 0.8
+  },
+  "cam": {
+   "rise_mm": 20.0,
+   "wind_deg": 144,
+   "gear": 20.0,
+   "cam_torque_Nm": 0.477,
+   "motor_torque_while_winding_Nm": 0.0298,
+   "efficiency_assumed": 0.8
+  }
+ },
+ "params": {
+  "l_E": 0.45,
+  "m_e": 0.304,
+  "L0": 0.015,
+  "stroke": 0.025,
+  "s_min": 0.005,
+  "preload": 0.01,
+  "k_leg": 2000.0,
+  "b_leg": 0.35,
+  "b_comp": 26.0,
+  "m_foot": 0.008,
+  "G": 20.0,
+  "f_wind": 0.4,
+  "w_clutch": 20.0,
+  "mu": 0.9,
+  "v_pay": 0.07,
+  "Ts": 0.005,
+  "q_wheel": 10.0,
+  "w_park": -200.0,
+  "catch_window": 0.15,
+  "hw": "SMALL"
+ },
+ "summary": {
+  "stick": "8/8",
+  "hop_stop": "8/8",
+  "flip": "8/8",
+  "fallen": "10/11",
+  "knock": "9/10",
+  "forward": "8/8",
+  "inertia_ratio_eps": 0.364,
+  "hops_per_20s": [
+   6,
+   7,
+   7,
+   7,
+   7,
+   7,
+   7,
+   7
+  ],
+  "extra_jumps_after_stop": [
+   1,
+   1,
+   1,
+   1,
+   0,
+   0,
+   1,
+   1
+  ],
+  "apex_cm": 12.0125,
+  "forward_cm_per_30s": [
+   -28,
+   47,
+   4,
+   22,
+   13,
+   -12,
+   9,
+   20
+  ],
+  "sideways_cm_per_30s": [
+   9,
+   -28,
+   8,
+   -12,
+   -7,
+   -1,
+   -11,
+   -11
+  ],
+  "getup_time_s": [
+   0.32,
+   2.21,
+   2.93,
+   2.43,
+   0.32,
+   0.26,
+   2.18,
+   2.25,
+   0.32,
+   0.32,
+   0.32
+  ],
+  "mean_power_hopping_W": 4.36,
+  "runtime_hopping_h": 1.8
+ },
+ "runs": {
+  "stick": [
+   {
+    "ok": "True"
+   },
+   {
+    "ok": "True"
+   },
+   {
+    "ok": "True"
+   },
+   {
+    "ok": "True"
+   },
+   {
+    "ok": "True"
+   },
+   {
+    "ok": "True"
+   },
+   {
+    "ok": "True"
+   },
+   {
+    "ok": "True"
+   }
+  ],
+  "hop_stop": [
+   {
+    "ok": true,
+    "hops_in_20s": 6,
+    "extra_after_stop": 1,
+    "apex_cm": 12.0,
+    "energy_Wh": 0.0363,
+    "t": 28.0
+   },
+   {
+    "ok": true,
+    "hops_in_20s": 7,
+    "extra_after_stop": 1,
+    "apex_cm": 12.0,
+    "energy_Wh": 0.0343,
+    "t": 28.0
+   },
+   {
+    "ok": true,
+    "hops_in_20s": 7,
+    "extra_after_stop": 1,
+    "apex_cm": 12.1,
+    "energy_Wh": 0.0353,
+    "t": 28.0
+   },
+   {
+    "ok": true,
+    "hops_in_20s": 7,
+    "extra_after_stop": 1,
+    "apex_cm": 12.1,
+    "energy_Wh": 0.0325,
+    "t": 28.0
+   },
+   {
+    "ok": true,
+    "hops_in_20s": 7,
+    "extra_after_stop": 0,
+    "apex_cm": 12.0,
+    "energy_Wh": 0.0326,
+    "t": 28.0
+   },
+   {
+    "ok": true,
+    "hops_in_20s": 7,
+    "extra_after_stop": 0,
+    "apex_cm": 12.0,
+    "energy_Wh": 0.0351,
+    "t": 28.0
+   },
+   {
+    "ok": true,
+    "hops_in_20s": 7,
+    "extra_after_stop": 1,
+    "apex_cm": 11.9,
+    "energy_Wh": 0.0347,
+    "t": 28.0
+   },
+   {
+    "ok": true,
+    "hops_in_20s": 7,
+    "extra_after_stop": 1,
+    "apex_cm": 12.0,
+    "energy_Wh": 0.0307,
+    "t": 28.0
+   }
+  ],
+  "flip": [
+   {
+    "ok": true,
+    "flips": 1
+   },
+   {
+    "ok": true,
+    "flips": 1
+   },
+   {
+    "ok": true,
+    "flips": 1
+   },
+   {
+    "ok": true,
+    "flips": 1
+   },
+   {
+    "ok": true,
+    "flips": 1
+   },
+   {
+    "ok": true,
+    "flips": 1
+   },
+   {
+    "ok": true,
+    "flips": 1
+   },
+   {
+    "ok": true,
+    "flips": 1
+   }
+  ],
+  "fallen": [
+   {
+    "ok": "True",
+    "start": [
+     5,
+     0
+    ],
+    "rest_deg": [
+     18.5,
+     0.3
+    ],
+    "t_up_s": 0.32,
+    "attempts": 1
+   },
+   {
+    "ok": "True",
+    "start": [
+     -5,
+     0
+    ],
+    "rest_deg": [
+     -18.5,
+     -1.0
+    ],
+    "t_up_s": 2.21,
+    "attempts": 1
+   },
+   {
+    "ok": "True",
+    "start": [
+     0,
+     3
+    ],
+    "rest_deg": [
+     0.0,
+     5.9
+    ],
+    "t_up_s": 2.93,
+    "attempts": 1
+   },
+   {
+    "ok": "True",
+    "start": [
+     0,
+     -3
+    ],
+    "rest_deg": [
+     0.0,
+     -5.9
+    ],
+    "t_up_s": 2.43,
+    "attempts": 1
+   },
+   {
+    "ok": false,
+    "start": [
+     4,
+     3
+    ],
+    "rest_deg": [
+     18.4,
+     5.5
+    ],
+    "t_up_s": 0.32,
+    "attempts": 3
+   },
+   {
+    "ok": "True",
+    "start": [
+     -4,
+     -3
+    ],
+    "rest_deg": [
+     -18.4,
+     -5.5
+    ],
+    "t_up_s": 0.26,
+    "attempts": 2
+   },
+   {
+    "ok": "True",
+    "start": [
+     4,
+     -3
+    ],
+    "rest_deg": [
+     18.4,
+     -5.5
+    ],
+    "t_up_s": 2.18,
+    "attempts": 4
+   },
+   {
+    "ok": "True",
+    "start": [
+     -4,
+     3
+    ],
+    "rest_deg": [
+     -18.4,
+     5.5
+    ],
+    "t_up_s": 2.25,
+    "attempts": 1
+   },
+   {
+    "ok": "True",
+    "start": [
+     5,
+     0
+    ],
+    "rest_deg": [
+     18.5,
+     0.3
+    ],
+    "t_up_s": 0.32,
+    "attempts": 1
+   },
+   {
+    "ok": "True",
+    "start": [
+     5,
+     0
+    ],
+    "rest_deg": [
+     18.5,
+     0.3
+    ],
+    "t_up_s": 0.32,
+    "attempts": 1
+   },
+   {
+    "ok": "True",
+    "start": [
+     5,
+     0
+    ],
+    "rest_deg": [
+     18.5,
+     0.3
+    ],
+    "t_up_s": 0.32,
+    "attempts": 1
+   }
+  ],
+  "knock": [
+   {
+    "ok": "True",
+    "push_deg": 0,
+    "push_N": 0.6,
+    "went_down": true,
+    "attempts": 5
+   },
+   {
+    "ok": "True",
+    "push_deg": 0,
+    "push_N": 1.5,
+    "went_down": true,
+    "attempts": 2
+   },
+   {
+    "ok": "True",
+    "push_deg": 45,
+    "push_N": 0.6,
+    "went_down": true,
+    "attempts": 1
+   },
+   {
+    "ok": "True",
+    "push_deg": 45,
+    "push_N": 1.5,
+    "went_down": true,
+    "attempts": 1
+   },
+   {
+    "ok": "True",
+    "push_deg": 90,
+    "push_N": 0.6,
+    "went_down": false,
+    "attempts": 0
+   },
+   {
+    "ok": "True",
+    "push_deg": 90,
+    "push_N": 1.5,
+    "went_down": true,
+    "attempts": 1
+   },
+   {
+    "ok": "True",
+    "push_deg": 180,
+    "push_N": 0.6,
+    "went_down": false,
+    "attempts": 0
+   },
+   {
+    "ok": "True",
+    "push_deg": 180,
+    "push_N": 1.5,
+    "went_down": true,
+    "attempts": 1
+   },
+   {
+    "ok": "True",
+    "push_deg": 270,
+    "push_N": 0.6,
+    "went_down": false,
+    "attempts": 0
+   },
+   {
+    "ok": false,
+    "push_deg": 270,
+    "push_N": 1.5,
+    "went_down": true,
+    "attempts": 7
+   }
+  ],
+  "forward": [
+   {
+    "ok": true,
+    "jumps": 7,
+    "forward_m": -0.275,
+    "sideways_m": 0.092,
+    "skid_touches": 10
+   },
+   {
+    "ok": true,
+    "jumps": 9,
+    "forward_m": 0.472,
+    "sideways_m": -0.282,
+    "skid_touches": 14
+   },
+   {
+    "ok": true,
+    "jumps": 4,
+    "forward_m": 0.038,
+    "sideways_m": 0.078,
+    "skid_touches": 12
+   },
+   {
+    "ok": true,
+    "jumps": 7,
+    "forward_m": 0.222,
+    "sideways_m": -0.119,
+    "skid_touches": 17
+   },
+   {
+    "ok": true,
+    "jumps": 6,
+    "forward_m": 0.127,
+    "sideways_m": -0.07,
+    "skid_touches": 9
+   },
+   {
+    "ok": true,
+    "jumps": 6,
+    "forward_m": -0.115,
+    "sideways_m": -0.012,
+    "skid_touches": 11
+   },
+   {
+    "ok": true,
+    "jumps": 7,
+    "forward_m": 0.092,
+    "sideways_m": -0.11,
+    "skid_touches": 16
+   },
+   {
+    "ok": true,
+    "jumps": 9,
+    "forward_m": 0.202,
+    "sideways_m": -0.113,
+    "skid_touches": 15
+   }
+  ]
+ }
+}

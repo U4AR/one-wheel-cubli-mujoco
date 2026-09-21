@@ -366,6 +366,77 @@ Caveats:
 - A somersault landing usually needs **one extra, controlled hop** before it is a stick again. Correcting the ≈ 0.5° landing pitch through the 45° wheel swings the wheel above the clutch speed, the cam winds, and the controller flies that jump deliberately instead of letting it fire at a random wheel speed.
 - Hopping at 90 rad/s is faster (one hop every ≈ 2.3 s, 8/8 seeds survive), but stopping then takes up to four more hops. The default is 60 rad/s; the viewer has a slider.
 
+### A small, buildable version from drone parts (`cubli/pogo_hw.py`, `scripts/pogo_small.py`)
+
+![pogo small](media/pogo_small.gif)
+
+The same machine at **half the size**: 0.9 m span, **0.30 kg**, about **$109** of parts. Everything is on board, and the two batteries are the end weights. At half size it is dynamically similar (Froude scaling): torque needs scale with length⁴ and times with √length. So instead of the paper's 3.4 N·m motor, it needs ≈ 0.21 N·m, which is what a **2806 drone motor** gives on a ~40 A FOC board.
+
+The simulation is built from the parts list below. Mass, centre of mass and inertia tensor are summed part by part, and the motor model comes from the motor's speed constant (KV), winding resistance, battery voltage and driver current limit, with thermal (I²t) derating. Part names are representative classes and the numbers are typical catalogue values; check them against the exact parts you buy.
+
+| part | g | $ | note |
+|---|---:|---:|---|
+| housing: printed PETG cube 75 mm + 2 CF plates | 25 | 4 |  |
+| tip pyramid struts (printed) | 4 | 0 |  |
+| motor stator + mount | 28 | 20 | 2806-class drone outrunner, KV1300 (~48 g, e.g. for 6-7 in props) |
+| FOC motor board (placed opposite the gearbox to trim the CoM) | 10 | 20 | small FOC board, ~40 A peak (e.g. ST B-G431B-ESC1 discovery kit or a SimpleFOC-type board) |
+| ESP32-C3 (radio link for the external tracking) + IMU | 5 | 6 |  |
+| winding drivetrain: clutch, sprag bearing, 20:1 printed gears, cam, follower | 16 | 8 |  |
+| leg: guide, 2 bushings, spring, escapement (pawl, rack, rotary damper) | 12 | 8 |  |
+| cantilever: CF tube 8 mm x 0.9 m | 15 | 6 |  |
+| pod drop strut L (CF rod) | 2 | 0 |  |
+| pod drop strut R (CF rod) | 2 | 0 |  |
+| battery pod L (3S LiPo + printed clip) | 44 | 9 | 3S 450 mAh 75C LiPo (~57x31x19 mm, ~40 g) |
+| battery pod R (3S LiPo + printed clip) | 44 | 9 | 3S 450 mAh 75C LiPo (~57x31x19 mm, ~40 g) |
+| roll skid +y (CF rod, rubber tip) | 2 | 1 |  |
+| roll skid -y (CF rod, rubber tip) | 2 | 1 |  |
+| harness, XT30 connectors, switch | 8 | 4 |  |
+| tracking markers / AprilTag plate | 2 | 1 |  |
+| flywheel: steel ring OD60/ID48 x 6 mm (bolted to the motor bell) | 53 | 3 | I = 40.7 g cm^2 incl. rotor bell |
+| foot slider + rubber foot | 8 | 1 |  |
+| bearings, screws, spring, line, glue | 0 | 8 |  |
+
+![drivetrain](media/pogo_small_drivetrain.png)
+
+- **Motor:** KV1300 on 3S gives Kt = 7.35 mN·m/A. The board limit of 40 A gives **0.29 N·m** peak, and 12 A continuous (in a vented printed frame) gives 0.09 N·m. No-load speed is 1510 rad/s; the flywheel is software-limited to 1000 rad/s (30 m/s rim speed, 20 J).
+- **Flywheel:** a steel ring OD 60 × ID 48 × 6 mm bolted to the motor bell (a large washer works). I = 4.1·10⁻⁵ kg·m².
+- **Winding drivetrain:** printed centrifugal clutch → sprag needle bearing → printed 20:1 spur gears → printed snail cam (20 mm rise over 144°, then a step) → roller follower and bell-crank → braided line → foot slider.
+  - Spring: 2 N/mm (20 → 60 N, 0.8 J stored).
+  - Cam torque: 0.48 N·m, which is only **0.03 N·m on the motor**. The balance controller gets that as a feed-forward.
+- **Rebound escapement:** an inertial pawl trips at touchdown and engages a printed rack; the rack re-extends through a one-way silicone rotary damper.
+- **Kickstands:** two 12 cm CF skids with rubber tips along ±y, plus the battery pods, whose bottoms sit level with the leg top.
+  - A fall ends leaning on one of them (≈ 18–20° in roll, ≈ 6° in pitch).
+  - The skids still clear the floor while the cam has the leg wound in, and during a somersault. Longer skids hit the floor mid-flip.
+- **Sensing:** assumed external. A camera with markers or an AprilTag feeds state over an ESP32 radio link. A cheap IMU on board would cover the fast loop.
+- **Energy:** 2 × 3S 450 mAh = 10 Wh. Standing costs about 1.5 W, mostly electronics. Hopping averages **≈ 4.4 W**, so about **1.8 h** of continuous hopping at 80% usable capacity.
+
+Control changes for the small robot:
+- **Control period:** 5 ms.
+- **Balance controller weights:**
+  - The torque weight is normalised to the motor's peak torque. With the paper's weight, the small motor ran at 70% of peak torque just standing, and thermal derating then disabled the flip.
+  - The wheel-speed weight is stronger, and the stick park speed is −200 rad/s, so "stop" means stop now.
+
+What it does (8 noise seeds each):
+
+| behaviour | result |
+|---|---|
+| stand as a stick | 8/8 |
+| hop continuously → stop → stick | 8/8: 6–7 hops per 20 s, apex ≈ 12 cm, 0–1 jumps after "stop" |
+| somersault (360° about the bar in the air) and land | 8/8 |
+| **get up after falling onto a skid or pod** (starting at rest on it, 8 directions) | **10/11**, up in 0.3–2.9 s |
+| get up after being knocked over (10 pushes, 0.6–1.5 N) | 9/10 |
+| hop forward (30 s) | never overturns (8/8); travels [-28, 47, 4, 22, 13, -12, 9, 20] cm (forward in 6/8), drifts [9, -28, 8, -12, -7, -1, -11, -11] cm along the bar |
+
+**How it gets up.** The wheel drives the roll rate onto the inverted pendulum's separatrix, ω = −π_a·α: the exact rate that coasts to upright and stops there. The law re-tracks that curve every step, and the balance controller takes over near upright.
+
+If lifting would leave the wheel spinning above the clutch speed, which would fire an unplanned jump, it first spins the wheel the other way while still resting on the skid. The reaction only presses the body harder into the skid.
+
+A pure pitch fall (resting on a pod at ≈ 6°) is recovered by the balance controller itself. The remaining failures are one diagonal rest pose and one hard push, which fall back repeatedly.
+
+**Hopping forward is experimental and weak.** Horizontal travel needs a lean at take-off, and any roll lean made through the 45° wheel also drives pitch, which cannot be controlled in the air.
+
+The version that works best tilts the body 6° about the bar in flight, so the foot lands ahead of the centre of mass, and the get-up law then lifts it back over the foot. It never falls over, but the direction is unreliable, and it touches a skid after most landings. A second, independent wheel (the original Cubli's answer) or an actuated leg angle would fix this.
+
 ## Live interactive viewer
 
 `app/server.py` runs the real MuJoCo plant and the full estimator/controller in real time, and streams it to your browser:
@@ -376,7 +447,7 @@ Caveats:
 - live switching between paper and tuned weights, CoM estimator on/off, sensor-noise level and measurement delay;
 - plant changes (end mass, beam frequency, CoM offset), applied as a model-mismatch test;
 - a "Runs & progress" panel that launches CMA-ES tuning, the benchmark or the tests and streams their progress, including a cost-per-generation chart;
-- every experiment as a Plant → Layout: the paper bar, hoops, oval hoops, the rolling hoop with two motors or one motor, the free-body **somersault** layout (Somersault / Jump-up attempt / Drop & settle / Stand & balance buttons, throw sliders, live phase and roll angle), and the **pogo** cross (Hop / Stop → stick / Somersault / Stick buttons, hop-speed slider, live mode, jumps, cam, clutch and escapement state; keys `H`, `X`, `F`);
+- every experiment as a Plant → Layout: the paper bar, hoops, oval hoops, the rolling hoop with two motors or one motor, the free-body **somersault** layout (Somersault / Jump-up attempt / Drop & settle / Stand & balance buttons, throw sliders, live phase and roll angle), the **pogo** cross (Hop / Stop → stick / Somersault / Stick buttons, hop-speed slider, live mode, jumps, cam, clutch and escapement state; keys `H`, `X`, `F`), and **POGO SMALL**, the buildable drone-parts robot, which adds Hop forward (`G`) and Knock over (`K`) and shows battery, falls and get-ups live;
 - a "Results & media" gallery with every figure, video and benchmark JSON the scripts produce.
 
 ```bash
@@ -400,10 +471,11 @@ cubli/tunings.py     "paper" and "tuned" controller settings
 cubli/live.py        step-wise interactive simulation for the viewer
 cubli/somersault.py  free-body cube on the floor (somersault study)
 cubli/pogo.py        pogo cross: one motor balances + winds/fires a spring leg
+cubli/pogo_hw.py     small buildable version: bill of materials -> mass properties, motor model
 cubli/live_*.py      viewer wrappers (rolling hoop, somersault, pogo)
 app/                 live web viewer (aiohttp server + single-page UI)
 scripts/             tuning, figures, video
-tests/               replication, rolling-hoop, somersault and pogo checks
+tests/               replication, rolling-hoop, somersault, pogo and small-robot checks
 ```
 
 ## Credit

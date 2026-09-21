@@ -47,21 +47,44 @@ class PogoParams:
     f_wind: float = 0.4         # fraction of a cam turn spent winding (rest: dwell, leg free)
     w_clutch: float = 20.0      # centrifugal clutch: cam drive engages above this wheel speed (rad/s)
     mu: float = 0.9
+    v_pay: float = 0.1          # rebound escapement pay-out speed (m/s)
+    Ts: float = 0.01            # control period (s)
+    q_wheel: float = 3.0        # LQR weight on the wheel-speed error
+    w_park: float = -80.0       # wheel speed parked in stick mode (below the clutch)
+    catch_window: float = 1.0   # stick mode: if the clutch catches within this fraction of a cam
+                                # turn before the release, fly that jump as a controlled hop
+    hw: object = None           # cubli.pogo_hw.Hardware: build from a bill of materials instead of the paper
 
     def with_(self, **kw):
         return replace(self, **kw)
 
 
 def _body_inertial(pp):
+    """(mass, CoM (3,), inertia about the CoM (3x3)) of the body without flywheel and foot."""
+    if pp.hw is not None:
+        return pp.hw.body_props()
     m_body = P.m_h + 2 * pp.m_e
     zc = (P.m_h * P.l_S + 2 * pp.m_e * P.l_Q) / m_body
     Ix = P.I_hx + 2 * pp.m_e * P.l_Q**2 - m_body * zc**2
     Iy = P.I_hy + 2 * pp.m_e * (pp.l_E**2 + P.l_Q**2) - m_body * zc**2
     Iz = P.I_hz + 2 * pp.m_e * pp.l_E**2
-    return m_body, zc, Ix, Iy, Iz
+    return m_body, np.array([0.0, 0.0, zc]), np.diag([Ix, Iy, Iz])
+
+
+def _inertial_xml(pp):
+    m, c, I = _body_inertial(pp)
+    return (f'<inertial pos="{c[0]} {c[1]} {c[2]}" mass="{m}" '
+            f'fullinertia="{I[0, 0]} {I[1, 1]} {I[2, 2]} {I[0, 1]} {I[0, 2]} {I[1, 2]}"/>')
+
+
+def motor_params(pp):
+    return pp.hw.motor.params() if pp.hw is not None else P
 
 
 def _body_geoms(pp, col):
+    if pp.hw is not None:
+        return "      " + pp.hw.geoms(col) + f'''
+      <geom type="cylinder" fromto="0 0 0 0 0 {-pp.L0}" size="{0.6 * pp.hw.foot_r * 2}" material="alu"/>'''
     h, z0 = 0.075, P.l_P
     corners = [(sx * h, sy * h, z0 + sz * h) for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)]
     edges = [(a, b) for i, a in enumerate(corners) for b in corners[i + 1:]
@@ -78,6 +101,8 @@ def _body_geoms(pp, col):
 
 
 def _wheel_body(pp):
+    if pp.hw is not None:
+        return pp.hw.wheel_xml()
     Iwt = max(P.I_wy, 0.5 * P.I_wx * 1.0001)
     wq = f"{np.cos(P.eta / 2)} 0 0 {np.sin(P.eta / 2)}"
     return f'''      <body name="wheel" pos="0 0 {P.l_P}" quat="{wq}">
@@ -107,9 +132,11 @@ _HEAD = """
 
 def build_free_xml(pp=PogoParams(), dt=5e-4):
     """Free-flying cross with a sprung foot (for stance, flight and landings)."""
-    m_body, zc, Ix, Iy, Iz = _body_inertial(pp)
     col = f'contype="1" conaffinity="1" friction="{pp.mu} 0.005 0.0001"'
-    h0 = pp.L0 + pp.stroke + 0.006
+    foot_r = pp.hw.foot_r if pp.hw is not None else 0.006
+    h0 = pp.L0 + pp.stroke + foot_r
+    cam = pp.hw.cam_xml() if pp.hw is not None else ""
+    tau_peak = motor_params(pp).tau_peak
     return f"""<mujoco model="pogo_cubli">{_HEAD.format(dt=dt, g=-P.g0)}
   <worldbody>
     <light directional="true" pos="0 0 5" dir="-0.3 0.3 -1" diffuse="0.6 0.6 0.6" castshadow="false"/>
@@ -117,20 +144,21 @@ def build_free_xml(pp=PogoParams(), dt=5e-4):
     <geom name="floor" type="plane" size="20 20 0.1" material="grid" contype="1" conaffinity="1" friction="{pp.mu} 0.005 0.0001"/>
     <body name="cubli" pos="0 0 {h0}">
       <freejoint name="free"/>
-      <inertial pos="0 0 {zc}" mass="{m_body}" diaginertia="{Ix} {Iy} {Iz}"/>
+      {_inertial_xml(pp)}
 {_body_geoms(pp, col)}
 {_wheel_body(pp)}
+{cam}
       <body name="foot" pos="0 0 {-pp.L0}">
         <joint name="leg" type="slide" axis="0 0 -1" range="0 {pp.stroke}" stiffness="{pp.k_leg}"
                springref="{pp.stroke + pp.preload}" damping="{pp.b_leg}" solreflimit="0.003 1"/>
         <inertial pos="0 0 0" mass="{pp.m_foot}" diaginertia="1e-6 1e-6 1e-6"/>
-        <geom name="foot" type="sphere" solref="0.005 1" size="0.006" material="alu" contype="1" conaffinity="1" friction="{pp.mu} 0.005 0.0001"/>
-        <geom type="capsule" fromto="0 0 0 0 0 {pp.stroke}" size="0.006" material="spring"/>
+        <geom name="foot" type="sphere" solref="0.005 1" size="{foot_r}" material="alu" contype="1" conaffinity="1" friction="{pp.mu} 0.005 0.0001"/>
+        <geom type="capsule" fromto="0 0 0 0 0 {pp.stroke}" size="{foot_r}" material="spring"/>
       </body>
     </body>
   </worldbody>
   <actuator>
-    <motor name="motor" joint="phi" gear="1" ctrlrange="{-P.tau_peak} {P.tau_peak}"/>
+    <motor name="motor" joint="phi" gear="1" ctrlrange="{-tau_peak} {tau_peak}"/>
   </actuator>
 </mujoco>"""
 
@@ -138,7 +166,6 @@ def build_free_xml(pp=PogoParams(), dt=5e-4):
 def build_pivot_xml(pp=PogoParams(), dt=5e-4, s=None):
     """Design model: foot pinned at the origin (hinges alpha, beta), leg locked at s."""
     s = pp.stroke if s is None else s
-    m_body, zc, Ix, Iy, Iz = _body_inertial(pp)
     hb = pp.L0 + s
     return f"""<mujoco model="pogo_pivot">{_HEAD.format(dt=dt, g=-P.g0)}
   <worldbody>
@@ -147,7 +174,7 @@ def build_pivot_xml(pp=PogoParams(), dt=5e-4, s=None):
       <joint name="beta" type="hinge" axis="0 1 0"/>
       <inertial pos="0 0 0" mass="{pp.m_foot}" diaginertia="1e-6 1e-6 1e-6"/>
       <body name="cubli" pos="0 0 {hb}">
-        <inertial pos="0 0 {zc}" mass="{m_body}" diaginertia="{Ix} {Iy} {Iz}"/>
+        {_inertial_xml(pp)}
 {_wheel_body(pp)}
       </body>
     </body>
@@ -197,7 +224,11 @@ class PogoBalance:
     one-step delay compensation; wheel-speed reference sets the jump rate."""
     SCALE = np.array([np.deg2rad(1), np.deg2rad(10), np.deg2rad(1), np.deg2rad(10), 50.0])
 
-    def __init__(self, pp=PogoParams(), Ts=0.01, Q=(1.0, 0.1, 1.0, 0.1, 3.0), Rw=20.0, w0=0.0):
+    def __init__(self, pp=PogoParams(), Ts=None, Q=None, Rw=20.0, w0=0.0):
+        Ts = pp.Ts if Ts is None else Ts
+        Q = (1.0, 0.1, 1.0, 0.1, pp.q_wheel) if Q is None else Q
+        # the torque weight is normalised to the paper motor's peak torque
+        Rw = Rw * (P.tau_peak / motor_params(pp).tau_peak) ** 2
         A, B = pivot_linear(pp, w0=w0)
         n = 5
         Mx = np.zeros((n + 1, n + 1)); Mx[:n, :n] = A; Mx[:n, n:] = B
@@ -209,10 +240,11 @@ class PogoBalance:
         self.K = (np.linalg.solve(Rw + Bn.T @ Pr @ Bn, Bn.T @ Pr @ An) @ Si)[0]
         self.u = 0.0
         self.w_ref = 0.0
+        self.x_ref = np.zeros(5)            # tilt reference (e.g. a lean before a forward hop)
 
     def step(self, x_delayed):
         xhat = self.Ad @ np.asarray(x_delayed, float) + self.Bd[:, 0] * self.u
-        e = xhat.copy(); e[4] -= self.w_ref
+        e = xhat - self.x_ref; e[4] -= self.w_ref
         self.u = float(-(self.K @ e))
         return self.u
 
@@ -222,7 +254,8 @@ class PogoSim:
     """Free-body pogo cross with the cam/ratchet wind-and-release driven by the
     reaction-wheel motor, and the balance controller."""
 
-    def __init__(self, pp=PogoParams(), dt=5e-4, Ts=0.01, ctrl=None, seed=0):
+    def __init__(self, pp=PogoParams(), dt=5e-4, Ts=None, ctrl=None, seed=0):
+        Ts = pp.Ts if Ts is None else Ts
         self.pp, self.dt, self.Ts = pp, dt, Ts
         self.m = mujoco.MjModel.from_xml_string(build_free_xml(pp, dt))
         self.d = mujoco.MjData(self.m)
@@ -237,7 +270,16 @@ class PogoSim:
         self.floor_geom = self.m.geom("floor").id
         self.body = self.m.body("cubli").id
         self.ctrl = ctrl or PogoBalance(pp, Ts)
-        self.motor = Motor(P)
+        A_piv, B_piv = pivot_linear(pp)
+        self.pi_a = float(np.sqrt(max(A_piv[1, 0], 1e-6)))     # roll fall rate constant on the foot
+        self.b_ground = float(abs(B_piv[1, 0]))                 # roll acceleration per N m, pivoting on the foot
+        self.b_ground_signed = float(B_piv[1, 0])
+        self.mp = motor_params(pp)
+        self.motor = Motor(self.mp)
+        self.has_stops = pp.hw is not None
+        self.camq = self.m.joint('camj').qposadr[0] if self.has_stops else None
+        self.camd = self.m.joint('camj').dofadr[0] if self.has_stops else None
+        self.E_used = 0.0
         self.rng = np.random.default_rng(seed)
         self.substep_hook = None
         self.controller_on = True
@@ -250,7 +292,7 @@ class PogoSim:
         qb = np.zeros(4); mujoco.mju_axisAngle2Quat(qb, np.array([0, 1.0, 0]), np.deg2rad(tilt_deg[1]))
         q = np.zeros(4); mujoco.mju_mulQuat(q, qa, qb)
         d.qpos[3:7] = q
-        d.qpos[2] = self.pp.L0 + self.pp.stroke + 0.0062
+        d.qpos[2] = self.pp.L0 + self.pp.stroke + (self.pp.hw.foot_r if self.has_stops else 0.006) + 2e-4
         d.qpos[self.lq] = self.pp.stroke
         mujoco.mj_forward(m, d)
         self._flight_geometry()
@@ -265,17 +307,29 @@ class PogoSim:
         self.max_z = 0.0
         self.flight_hold = True
         self.mode, self.phase, self.t_phase = "stick", "stick", 0.0
-        self.w_hop, self.w_idle, self.w_park = 60.0, -20.0, -80.0
+        self.w_hop, self.w_idle, self.w_park = 60.0, -20.0, self.pp.w_park
         self.settle_deg, self.settle_time = 1.0, 0.15
         self.ctrl.w_ref = 0.0
         self.w_ref_s, self.w_slew = 0.0, 400.0
-        self.latch_on, self.latched, self.latch_pos, self.v_pay = True, False, self.pp.stroke, 0.1
+        self.latch_on, self.latched, self.latch_pos, self.v_pay = True, False, self.pp.stroke, self.pp.v_pay
         self.latch_armed, self.t_unloaded, self.t_latch = False, 0.0, 0.0
         self.was_air = False
         self.wind_for_flip = False
         self.flipping, self.flip_angle, self.flip_request, self.flips = False, 0.0, False, 0
         self.w_flip, self.flip_decel, self.flip_handover_deg = 30.0, 0.85, 0.3
         self.flip_braking, self.flip_kw, self.flip_klin = False, 40.0, 60.0
+        self.auto_getup, self.t_down, self.getups = True, 0.0, 0
+        self.fwd, self.alpha_target, self.lean_deg, self.t_lean, self.cp_gain = 0, 0.0, 0.0, 0.25, 0.0
+        self.w_fwd = 60.0
+        self.step_deg = 6.0
+        self.lean_frac, self.lean_ramp = 0.5, 0.3
+        self.hop_start_y = None
+        self.vault_a0 = 0.0
+        self.vault_lqr = False
+        self.resume_mode = "stick"
+        mujoco.mj_forward(m, d)
+        self.h_com = float(d.subtree_com[self.body][2] - (d.xpos[self.m.body('foot').id][2] - self.m.geom_size[self.foot_geom][0]))
+        self.getup_gain, self.getup_k, self.getup_dw, self.getup_prespin = 1.05, 40.0, 250.0, False
 
     # ----------------------------------------------------------- mechanism
     def cam_limit(self):
@@ -291,9 +345,9 @@ class PogoSim:
         v = -I^-1 a u (a: wheel axis in the body frame), so regulate the attitude and
         rate components along c = v/|v| (the one direction the wheel can act on)."""
         x = self.buf[0]
-        e = np.array([x[0], x[2]])
+        e = np.array([x[0] - self.alpha_target, x[2]])
         w = np.array([x[1], x[3]])
-        return float(np.clip(self.kf_p * (self.c_fl @ e) + self.kf_d * (self.c_fl @ w), -P.tau_peak, P.tau_peak))
+        return float(np.clip(self.kf_p * (self.c_fl @ e) + self.kf_d * (self.c_fl @ w), -self.mp.tau_peak, self.mp.tau_peak))
 
     def _flight_geometry(self):
         m, d = self.m, self.d
@@ -320,7 +374,7 @@ class PogoSim:
         if self.flip_angle > np.deg2rad(300):
             rem = -self.tilt()[0]               # final approach on the measured tilt
         w = self.d.qvel[3]
-        a_max = self.b_fl * P.tau_peak
+        a_max = self.b_fl * self.mp.tau_peak
         if not self.flip_braking and rem < np.deg2rad(self.flip_handover_deg):
             return u_attitude
         a_req = w * w / (2 * max(rem, 1e-3)) if w > 0 else 0.0
@@ -335,8 +389,36 @@ class PogoSim:
                 w_des, a_ff = np.sqrt(2 * a_nom * rem), a_nom
             else:
                 w_des, a_ff = k * rem, k * w
-            return float(np.clip((a_ff + self.flip_kw * (w - w_des)) / self.b_fl, -P.tau_peak, P.tau_peak))
-        return -P.tau_peak
+            return float(np.clip((a_ff + self.flip_kw * (w - w_des)) / self.b_fl, -self.mp.tau_peak, self.mp.tau_peak))
+        return -self.mp.tau_peak
+
+    def getup_law(self):
+        """Lift off a skid / pod: drive the roll rate onto the inverted-pendulum
+        separatrix w = -pi_a * alpha (the rate that coasts to upright and stops
+        there), re-tracked every step; the balance LQR takes over near upright."""
+        a, b, _ = self.tilt()
+        wx = self.d.qvel[3]
+        w = self.d.qvel[self.wd]
+        u_lift = -np.sign(a) / np.sign(self.b_ground_signed)   # sign of the lifting torque
+        if self.getup_prespin:
+            # still on the skid: spin the wheel the other way first (the reaction only
+            # presses the body into the skid) so the lift cannot leave it above the clutch
+            target = self.pp.w_clutch - 30.0 - self.getup_dw
+            if u_lift > 0 and w > target and self.body_contact():
+                return float(-0.6 * self.mp.tau_peak)
+            self.getup_prespin = False
+        w_des = -self.getup_gain * self.pi_a * a
+        # roll acceleration = b_ground_signed * u  ->  track w_des with gain getup_k
+        return float(np.clip(self.getup_k * (w_des - wx) / self.b_ground_signed, -self.mp.tau_peak, self.mp.tau_peak))
+
+    def winding_torque(self):
+        """spring load reflected to the motor through the cam and gear (0 in the dwell)"""
+        pp = self.pp
+        e_cam, slope = self.cam_limit()
+        if slope == 0.0:
+            return 0.0
+        F = pp.k_leg * (pp.preload + pp.stroke - e_cam)
+        return F * slope / pp.G
 
     def cam_phase(self):
         return (self.cam % (2 * np.pi)) / (2 * np.pi)
@@ -390,7 +472,15 @@ class PogoSim:
         self.hop_logic()
         self.buf.append(self.measure()); self.buf.pop(0)
         in_air = self.unloaded() and self.flight_hold
-        if in_air:
+        if self.phase == "vault" and self.vault_lqr:
+            tau = d.time - self.t_phase
+            self.ctrl.x_ref[0] = self.vault_a0 * np.exp(-self.pi_a * tau)
+            self.ctrl.x_ref[1] = -self.pi_a * self.ctrl.x_ref[0]
+        if self.phase == "getup" or (self.phase == "vault" and not self.vault_lqr):
+            u_cmd = self.getup_law()
+            self.ctrl.u = u_cmd
+            self.w_ref_s = d.qvel[self.wd]
+        elif in_air:
             u_cmd = self.flight_control()
             self.ctrl.u = u_cmd
         else:
@@ -400,6 +490,8 @@ class PogoSim:
                 self.buf[0] = self.buf[-1]
             u_cmd = self.ctrl.step(self.buf[0])
         self.was_air = in_air
+        if self.has_stops and not in_air and self.phase == "wind" and d.qvel[self.wd] > self.pp.w_clutch:
+            u_cmd += self.winding_torque()          # known cam load: feed it forward
         if not self.controller_on:
             u_cmd = 0.0
         u, lim = self.motor.limit(u_cmd, d.qvel[self.wd], self.Ts)
@@ -449,13 +541,19 @@ class PogoSim:
                 if self.unloaded():
                     a_, b_, _ = self.tilt()
                     wb = d.qvel[3:5]
-                    uf = self.kf_p * (self.c_fl @ np.array([a_, b_])) + self.kf_d * (self.c_fl @ wb)
+                    uf = self.kf_p * (self.c_fl @ np.array([a_ - self.alpha_target, b_])) + self.kf_d * (self.c_fl @ wb)
                     if self.flipping:
                         uf = self.flip_law(uf)
-                    d.ctrl[0], _ = self.motor.limit(float(np.clip(uf, -P.tau_peak, P.tau_peak)), d.qvel[self.wd], 0.0)
+                    d.ctrl[0], _ = self.motor.limit(float(np.clip(uf, -self.mp.tau_peak, self.mp.tau_peak)), d.qvel[self.wd], 0.0)
                 else:
                     d.ctrl[0] = u
             mujoco.mj_step(m, d)
+            if self.camq is not None:           # show the cam turning (kinematic, visual only)
+                d.qpos[self.camq] = -self.cam
+                d.qvel[self.camd] = 0.0
+            if self.has_stops:
+                self.E_used += (self.pp.hw.motor.electrical_power(d.ctrl[0], d.qvel[self.wd])
+                                + self.pp.hw.electronics_W) * self.dt
             if self.flipping:
                 self.flip_angle += d.qvel[3] * self.dt
         # hop bookkeeping
@@ -463,7 +561,7 @@ class PogoSim:
         z = d.xipos[self.body][2]
         if self.airborne:
             self.max_z = max(self.max_z, z)
-            if on:
+            if on or self.body_contact():
                 self.airborne = False
                 h = self.max_z - self.z_takeoff
                 if h > 0.01:
@@ -488,8 +586,18 @@ class PogoSim:
                 self.mode = "stop"             # one jump (the flip), then stick again
             return
         if mode == "stop" and self.mode == "hop":
-            self.mode = "stop"
+            # stop now: park the wheel below the clutch speed (the cam stays where it
+            # is, spring partly wound); if airborne, after the landing
+            self.mode = "stop" if self.phase == "flight" else "stick"
+            if self.mode == "stick":
+                self.phase = "stick"
+        elif mode in ("hop_fwd", "hop_back"):
+            self.fwd = 1 if mode == "hop_fwd" else -1
+            self.mode = "hop"
+            if self.phase == "stick":
+                self.phase, self.t_phase = "settle", self.d.time
         elif mode in ("stick", "hop"):
+            self.fwd = 0
             self.mode = mode
             if mode == "hop" and self.phase == "stick":
                 self.phase, self.t_phase = "settle", self.d.time
@@ -500,19 +608,65 @@ class PogoSim:
         quiet = (abs(s["alpha"]) < self.settle_deg and abs(s["beta"]) < self.settle_deg
                  and np.linalg.norm(d.qvel[3:5]) < np.deg2rad(8) and abs(d.qvel[2]) < 0.05)
         in_wind = self.cam_phase() < pp.f_wind
-        if self.phase == "flight":
+        a_, b_, _ = self.tilt()
+        if self.has_stops and self.auto_getup and self.phase != "getup" and not self.airborne:
+            resting = self.body_contact()
+            self.t_down = self.t_down + self.Ts if resting else 0.0
+            if self.t_down > 0.05:
+                self.resume_mode = self.mode if self.mode in ("hop", "stick") else "stick"
+                self.mode, self.phase, self.t_phase = "stick", "getup", d.time
+                self.flip_request = False
+                self.getup_prespin = True
+                self.getups += 1
+        if self.phase == "getup":
+            if abs(np.rad2deg(a_)) < 2.5 and abs(np.rad2deg(b_)) < 4.0 and not self.body_contact():
+                self.phase, self.t_phase = "stick", d.time
+                self.mode = self.resume_mode
+                self.ctrl.u = float(d.ctrl[0])
+                self.w_ref_s = d.qvel[self.wd]
+            elif d.time - self.t_phase > 3.0:      # give the balance LQR a go, then retry
+                self.phase, self.t_phase, self.t_down = "stick", d.time, 0.0
+                self.mode = self.resume_mode
+        elif self.phase == "vault":
+            done = (d.time - self.t_phase > 4.0 / self.pi_a) if self.vault_lqr else abs(np.rad2deg(a_)) < 2.0
+            if done or d.time - self.t_phase > 1.5:
+                self.ctrl.x_ref[:2] = 0.0
+                self.phase, self.t_phase = "settle", d.time
+                self.ctrl.u = float(d.ctrl[0])
+                self.w_ref_s = d.qvel[self.wd]
+        elif self.phase == "flight":
             if not self.airborne:
+                if self.fwd and abs(self.alpha_target) > np.deg2rad(1.0) and not self.flipping:
+                    # landed at the capture point: let it vault up along the separatrix
+                    self.alpha_target = 0.0
+                    self.phase, self.t_phase = "vault", d.time
+                    self.vault_a0 = float(a_)
+                    self.ctrl.u = float(d.ctrl[0])
+                    return
+                self.alpha_target = 0.0
                 if self.flipping:
                     self.flipping = False
                     self.flips += int(self.flip_angle > np.deg2rad(300))
                 self.phase, self.t_phase = "settle", d.time
         elif self.airborne:
             self.phase, self.t_phase = "flight", d.time
+            self.ctrl.x_ref[:] = 0.0
+            if self.fwd and not (self.flip_request and self.wind_for_flip):
+                # the lean at take-off gave the CoM a horizontal velocity; in the air,
+                # turn the body about the bar axis (the axis the wheel controls well) so
+                # the foot lands at the capture point (plus a small step): the stance
+                # vault then brings it upright over the foot, carrying it forward.
+                # Travel is along +y for fwd=+1: alpha > 0 puts the foot toward +y, and
+                # lifting back over it spins the wheel UP (keeps the clutch winding).
+                vy = float(d.qvel[1])
+                cap = vy / (self.h_com * self.pi_a) * self.cp_gain
+                self.alpha_target = float(np.clip(cap + self.fwd * np.deg2rad(self.step_deg),
+                                                  -np.deg2rad(8), np.deg2rad(8)))
             if self.flip_request and self.wind_for_flip:
                 self.flipping, self.flip_angle, self.flip_request, self.flip_braking = True, 0.0, False, False
             self.wind_for_flip = False
         elif self.phase == "settle":
-            if self.mode == "stop" and not in_wind and not self.flip_request:
+            if self.mode == "stop" and not self.flip_request:
                 self.mode, self.phase = "stick", "stick"
             elif self.mode == "stick":
                 self.phase = "stick"
@@ -524,16 +678,29 @@ class PogoSim:
                 self.phase = "stick"
         elif self.phase == "stick" and self.mode == "hop":
             self.phase, self.t_phase = "settle", d.time
-        elif self.phase == "stick" and in_wind and d.qvel[self.wd] > pp.w_clutch:
+        elif (self.phase == "stick" and in_wind and d.qvel[self.wd] > pp.w_clutch
+              and (pp.f_wind - self.cam_phase()) % 1.0 < pp.catch_window):
             # the clutch caught during a big balance transient: the cam is winding,
             # so fly this jump as a controlled hop and come back to stick
             self.mode, self.phase, self.t_phase = "stop", "wind", d.time
             self.w_ref_s = d.qvel[self.wd]
         # wheel-speed reference: above the clutch speed only while winding
+        if self.phase == "wind" and self.fwd and not self.wind_for_flip and self.lean_deg > 0:
+            # lean toward the travel direction for the last part of the wind. Travel
+            # is along -y for fwd=+1: holding that lean spins the wheel UP, which
+            # keeps the clutch in and brings the release sooner (the other lean
+            # would slow the wheel below the clutch speed and stall the cam)
+            to_rel = (pp.f_wind - self.cam_phase()) % 1.0
+            cam_turning = d.qvel[self.wd] > pp.w_clutch + 30.0
+            goal = self.fwd * np.deg2rad(self.lean_deg) if (to_rel < self.lean_frac and cam_turning) else 0.0
+            step = np.deg2rad(self.lean_deg) / self.lean_ramp * self.Ts
+            self.ctrl.x_ref[0] += np.clip(goal - self.ctrl.x_ref[0], -step, step)
+        elif self.phase != "vault":
+            self.ctrl.x_ref[:2] = 0.0
         if self.phase == "wind":
             # flips wind (and so take off) with a slow wheel: the gyroscopic pitch
             # error of the flip grows with the wheel speed
-            target = self.w_flip if self.wind_for_flip else self.w_hop
+            target = self.w_flip if self.wind_for_flip else (self.w_fwd if self.fwd else self.w_hop)
         elif self.mode == "hop" or self.flip_request:
             target = self.w_idle
         else:
@@ -549,4 +716,12 @@ class PogoSim:
         return dict(t=self.d.time, alpha=np.rad2deg(a), beta=np.rad2deg(b), upright=R[2, 2],
                     wheel=self.d.qvel[self.wd], leg=self.d.qpos[self.lq], cam=self.cam_phase(),
                     airborne=self.airborne, jumps=self.jumps, mode=self.mode, phase=self.phase, z=self.d.xipos[self.body][2],
-                    x=self.d.qpos[0], y=self.d.qpos[1], fallen=bool((R[2, 2] < 0.7 and not (self.flipping and self.airborne)) or self.body_contact()))
+                    x=self.d.qpos[0], y=self.d.qpos[1], fallen=self.is_fallen(R), down=bool(self.has_stops and self.body_contact()),
+                    energy_Wh=self.E_used / 3600.0)
+
+    def is_fallen(self, R):
+        if self.flipping and self.airborne:
+            return False
+        if self.has_stops:          # resting on the skids / battery pods is recoverable
+            return bool(R[2, 2] < np.cos(np.deg2rad(40)))
+        return bool(R[2, 2] < 0.7 or self.body_contact())
