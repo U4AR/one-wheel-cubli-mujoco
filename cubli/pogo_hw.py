@@ -30,6 +30,17 @@ import numpy as np
 from .params import NOMINAL as P
 
 ETA = np.pi / 4                # wheel axis direction in the body x-y plane (as in the paper)
+ZETA = np.deg2rad(20.0)        # wheel axis tilted up out of that plane: gives yaw authority
+
+
+def _Ry(a):
+    c, s = np.cos(a), np.sin(a)
+    return np.array([[c, 0, s], [0, 1.0, 0], [-s, 0, c]])
+
+
+def wheel_axis(zeta=None):
+    z = ZETA if zeta is None else zeta
+    return np.array([np.cos(z) * np.cos(ETA), np.cos(z) * np.sin(ETA), np.sin(z)])
 
 
 def _Rz(a):
@@ -61,7 +72,7 @@ class Part:
         elif self.shape == "cyl":
             rad, h = self.size
             Il = np.diag([m * rad * rad / 2, m * (3 * rad * rad + h * h) / 12, m * (3 * rad * rad + h * h) / 12])
-            R = {"x": np.eye(3), "y": _Rz(np.pi / 2), "w": _Rz(ETA),
+            R = {"x": np.eye(3), "y": _Rz(np.pi / 2), "w": _Rz(ETA) @ _Ry(-ZETA),
                  "z": np.array([[0, 0, 1.0], [0, 1, 0], [-1, 0, 0]])}[self.axis]
             Ic = R @ Il @ R.T
         elif self.shape == "rod":
@@ -84,7 +95,7 @@ class Part:
         if self.shape == "cyl":
             rad, h = self.size
             u = np.asarray({"x": (1, 0, 0), "y": (0, 1, 0), "z": (0, 0, 1),
-                            "w": (np.cos(ETA), np.sin(ETA), 0)}[self.axis], float)
+                            "w": tuple(wheel_axis())}[self.axis], float)
             p0 = np.asarray(self.pos) - u * h / 2
             p1 = np.asarray(self.pos) + u * h / 2
             return (f'<geom type="cylinder" fromto="{p0[0]} {p0[1]} {p0[2]} {p1[0]} {p1[1]} {p1[2]}" '
@@ -150,6 +161,7 @@ class Hardware:
     skid_len: float = 0.12
     skid_drop: float = 0.0
     foot_r: float = 0.004
+    foot_torsion: float = 0.0005  # rubber foot: torsional friction length (m), torque = this x normal force
     electronics_W: float = 1.5  # MCU + radio + FOC board quiescent
     motor: Motor = field(default_factory=Motor)
     battery: Battery = field(default_factory=Battery)
@@ -246,7 +258,13 @@ class Hardware:
 
     def wheel_xml(self):
         w = self.wheel()
-        wq = f"{np.cos(ETA / 2)} 0 0 {np.sin(ETA / 2)}"
+        qz = np.array([np.cos(ETA / 2), 0, 0, np.sin(ETA / 2)])
+        qy = np.array([np.cos(-ZETA / 2), 0, np.sin(-ZETA / 2), 0])
+        q = np.array([qz[0] * qy[0] - qz[3] * qy[3] * 0 - qz[1] * qy[1] - qz[2] * qy[2],
+                      qz[0] * qy[1] + qz[1] * qy[0] + qz[2] * qy[3] - qz[3] * qy[2],
+                      qz[0] * qy[2] - qz[1] * qy[3] + qz[2] * qy[0] + qz[3] * qy[1],
+                      qz[0] * qy[3] + qz[1] * qy[2] - qz[2] * qy[1] + qz[3] * qy[0]])
+        wq = f"{q[0]} {q[1]} {q[2]} {q[3]}"
         ro, ri, wd = self.rim
         return f'''      <body name="wheel" pos="0 0 {self.LP}" quat="{wq}">
         <joint name="phi" type="hinge" axis="1 0 0"/>

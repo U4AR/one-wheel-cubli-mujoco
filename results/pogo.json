@@ -13,7 +13,13 @@
   "G": 20.0,
   "f_wind": 0.4,
   "w_clutch": 20.0,
-  "mu": 0.9
+  "mu": 0.9,
+  "v_pay": 0.1,
+  "Ts": 0.01,
+  "q_wheel": 3.0,
+  "w_park": -80.0,
+  "catch_window": 1.0,
+  "hw": null
  },
  "inertia_ratio_eps": {
   "l_E=0.5975": 0.584,
@@ -54,7 +60,7 @@
    5,
    6
   ],
-  "apex_mean_cm": 17.6,
+  "apex_mean_cm": 17.5,
   "max_tilt_while_hopping_deg": 2.34,
   "ended_as_stick": 8
  },
@@ -114,14 +120,14 @@
     ]
    ],
    "hops_before_stop": 5,
-   "jumps_total": 11,
+   "jumps_total": 12,
    "flips": 2,
-   "apex_mean_cm": 17.7,
+   "apex_mean_cm": 17.4,
    "max_tilt_while_hopping_deg": 1.76,
-   "stick_after_stop_at": 23.29,
+   "stick_after_stop_at": 21.02,
    "final_phase": "stick",
-   "final_tilt_deg": 0.07,
-   "drift_m": 0.178
+   "final_tilt_deg": 1.74,
+   "drift_m": 0.172
   },
   {
    "seed": 2,
@@ -148,12 +154,12 @@
    "hops_before_stop": 5,
    "jumps_total": 11,
    "flips": 2,
-   "apex_mean_cm": 17.9,
+   "apex_mean_cm": 17.8,
    "max_tilt_while_hopping_deg": 1.74,
-   "stick_after_stop_at": 23.29,
+   "stick_after_stop_at": 21.02,
    "final_phase": "stick",
-   "final_tilt_deg": 0.84,
-   "drift_m": 0.135
+   "final_tilt_deg": 0.09,
+   "drift_m": 0.08
   },
   {
    "seed": 3,
@@ -178,14 +184,14 @@
     ]
    ],
    "hops_before_stop": 5,
-   "jumps_total": 11,
+   "jumps_total": 10,
    "flips": 2,
    "apex_mean_cm": 17.4,
    "max_tilt_while_hopping_deg": 2.34,
-   "stick_after_stop_at": 22.64,
+   "stick_after_stop_at": 21.02,
    "final_phase": "stick",
    "final_tilt_deg": 0.02,
-   "drift_m": 0.075
+   "drift_m": 0.115
   },
   {
    "seed": 4,
@@ -216,8 +222,8 @@
    "max_tilt_while_hopping_deg": 1.77,
    "stick_after_stop_at": 22.19,
    "final_phase": "stick",
-   "final_tilt_deg": 0.36,
-   "drift_m": 0.065
+   "final_tilt_deg": 0.31,
+   "drift_m": 0.055
   },
   {
    "seed": 5,
@@ -242,14 +248,14 @@
     ]
    ],
    "hops_before_stop": 5,
-   "jumps_total": 11,
+   "jumps_total": 12,
    "flips": 2,
    "apex_mean_cm": 17.5,
    "max_tilt_while_hopping_deg": 2.3,
-   "stick_after_stop_at": 22.7,
+   "stick_after_stop_at": 21.02,
    "final_phase": "stick",
-   "final_tilt_deg": 0.11,
-   "drift_m": 0.075
+   "final_tilt_deg": 1.6,
+   "drift_m": 0.095
   },
   {
    "seed": 6,
@@ -274,14 +280,14 @@
     ]
    ],
    "hops_before_stop": 5,
-   "jumps_total": 10,
+   "jumps_total": 11,
    "flips": 2,
    "apex_mean_cm": 17.3,
    "max_tilt_while_hopping_deg": 1.42,
-   "stick_after_stop_at": 22.36,
+   "stick_after_stop_at": 21.02,
    "final_phase": "stick",
-   "final_tilt_deg": 0.15,
-   "drift_m": 0.128
+   "final_tilt_deg": 0.22,
+   "drift_m": 0.133
   },
   {
    "seed": 7,
@@ -306,14 +312,14 @@
     ]
    ],
    "hops_before_stop": 6,
-   "jumps_total": 12,
+   "jumps_total": 11,
    "flips": 2,
-   "apex_mean_cm": 17.7,
+   "apex_mean_cm": 17.4,
    "max_tilt_while_hopping_deg": 1.82,
-   "stick_after_stop_at": 24.48,
+   "stick_after_stop_at": 21.02,
    "final_phase": "stick",
-   "final_tilt_deg": 0.32,
-   "drift_m": 0.081
+   "final_tilt_deg": 0.03,
+   "drift_m": 0.093
   }
  ]
 }

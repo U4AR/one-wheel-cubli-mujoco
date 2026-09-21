@@ -136,12 +136,16 @@ def build_free_xml(pp=PogoParams(), dt=5e-4):
     foot_r = pp.hw.foot_r if pp.hw is not None else 0.006
     h0 = pp.L0 + pp.stroke + foot_r
     cam = pp.hw.cam_xml() if pp.hw is not None else ""
+    # small robot: a rubber foot with real (small) torsional friction, so turning on it costs torque
+    foot_fr = (f'condim="4" friction="{pp.mu} {pp.hw.foot_torsion} 0.0001"' if pp.hw is not None
+               else f'friction="{pp.mu} 0.005 0.0001"')
+    floor_tors = 0.0001 if pp.hw is not None else 0.005
     tau_peak = motor_params(pp).tau_peak
     return f"""<mujoco model="pogo_cubli">{_HEAD.format(dt=dt, g=-P.g0)}
   <worldbody>
     <light directional="true" pos="0 0 5" dir="-0.3 0.3 -1" diffuse="0.6 0.6 0.6" castshadow="false"/>
     <light directional="true" pos="0 0 5" dir="0.4 -0.3 -1" diffuse="0.3 0.3 0.3" castshadow="false"/>
-    <geom name="floor" type="plane" size="20 20 0.1" material="grid" contype="1" conaffinity="1" friction="{pp.mu} 0.005 0.0001"/>
+    <geom name="floor" type="plane" size="20 20 0.1" material="grid" contype="1" conaffinity="1" friction="{pp.mu} {floor_tors} 0.0001"/>
     <body name="cubli" pos="0 0 {h0}">
       <freejoint name="free"/>
       {_inertial_xml(pp)}
@@ -152,7 +156,7 @@ def build_free_xml(pp=PogoParams(), dt=5e-4):
         <joint name="leg" type="slide" axis="0 0 -1" range="0 {pp.stroke}" stiffness="{pp.k_leg}"
                springref="{pp.stroke + pp.preload}" damping="{pp.b_leg}" solreflimit="0.003 1"/>
         <inertial pos="0 0 0" mass="{pp.m_foot}" diaginertia="1e-6 1e-6 1e-6"/>
-        <geom name="foot" type="sphere" solref="0.005 1" size="{foot_r}" material="alu" contype="1" conaffinity="1" friction="{pp.mu} 0.005 0.0001"/>
+        <geom name="foot" type="sphere" solref="0.005 1" size="{foot_r}" material="alu" contype="1" conaffinity="1" {foot_fr}/>
         <geom type="capsule" fromto="0 0 0 0 0 {pp.stroke}" size="{foot_r}" material="spring"/>
       </body>
     </body>
@@ -274,6 +278,15 @@ class PogoSim:
         self.pi_a = float(np.sqrt(max(A_piv[1, 0], 1e-6)))     # roll fall rate constant on the foot
         self.b_ground = float(abs(B_piv[1, 0]))                 # roll acceleration per N m, pivoting on the foot
         self.b_ground_signed = float(B_piv[1, 0])
+        self.I_w = float(pp.hw.wheel()["I_ax"]) if pp.hw is not None else float(P.I_wx)
+        mujoco.mj_forward(self.m, self.d)
+        Rb = self.d.xmat[self.body].reshape(3, 3)
+        self.wheel_axis_body = Rb.T @ self.d.xmat[self.m.body("wheel").id].reshape(3, 3)[:, 0]
+        Mf = np.zeros((self.m.nv, self.m.nv)); mujoco.mj_fullM(self.m, self.d, Mf)
+        self.I_z = float(Mf[5, 5])
+        # frictionless estimate of body yaw per unit wheel-speed change (rad per rad/s)
+        self.yaw_per_dw = max(abs(self.I_w * self.wheel_axis_body[2] / self.I_z), 1e-6) * 0.6
+        self.tau_s = (pp.hw.foot_torsion if pp.hw is not None else 0.0) * self.weight
         self.mp = motor_params(pp)
         self.motor = Motor(self.mp)
         self.has_stops = pp.hw is not None
@@ -319,13 +332,23 @@ class PogoSim:
         self.w_flip, self.flip_decel, self.flip_handover_deg = 30.0, 0.85, 0.3
         self.flip_braking, self.flip_kw, self.flip_klin = False, 40.0, 60.0
         self.auto_getup, self.t_down, self.getups = True, 0.0, 0
-        self.fwd, self.alpha_target, self.lean_deg, self.t_lean, self.cp_gain = 0, 0.0, 0.0, 0.25, 0.0
+        self.fwd, self.alpha_target, self.lean_deg, self.t_lean, self.cp_gain = 0, 0.0, 0.0, 0.25, 0.5
         self.w_fwd = 60.0
-        self.step_deg = 6.0
+        self.step_deg = 0.0
+        self.kick_deg, self.kick_T, self.kick_U, self.cp_max = 1.0, 0.12, 0.0, 12.0
         self.lean_frac, self.lean_ramp = 0.5, 0.3
         self.hop_start_y = None
         self.vault_a0 = 0.0
         self.vault_lqr = False
+        self.use_vault = False
+        # heading (yaw) control: wheel-speed ratchet in stance (needs the tilted wheel)
+        self.heading_target, self.yaw_hold, self.yaw_tol = None, False, np.deg2rad(4.0)
+        self.turn_stage, self.turn_w0, self.turn_dw = None, 0.0, 0.0
+        self.turn_fast, self.turn_slow, self.turn_dw_max = 600.0, 90.0, 350.0
+        self.yaw_mode, self.yaw_ofs, self.yaw_rf, self.yaw_uff = "off", 0.0, 0.0, 0.0
+        self.yaw_kp, self.yaw_kd, self.yaw_a_max, self.yaw_w_turn = 1.0, 2.0, 400.0, 150.0
+        self.yaw_K, self.yaw_w_max, self.yaw_short_neg = 700.0, 350.0, np.deg2rad(20.0)
+        self.turns = 0
         self.resume_mode = "stick"
         mujoco.mj_forward(m, d)
         self.h_com = float(d.subtree_com[self.body][2] - (d.xpos[self.m.body('foot').id][2] - self.m.geom_size[self.foot_geom][0]))
@@ -411,6 +434,91 @@ class PogoSim:
         # roll acceleration = b_ground_signed * u  ->  track w_des with gain getup_k
         return float(np.clip(self.getup_k * (w_des - wx) / self.b_ground_signed, -self.mp.tau_peak, self.mp.tau_peak))
 
+    def start_turn(self):
+        """one ratchet cycle sized to the heading error"""
+        d = self.d
+        e = self.heading_error()
+        a_z = float(self.wheel_axis_body[2])
+        # body yaw accel = -I_w * dw/dt * a_z / I_z : a FAST decrease of w turns the body +yaw
+        dw = float(np.clip(abs(e) / self.yaw_per_dw, 60.0, self.turn_dw_max))
+        self.turn_w0 = float(self.w_ref_s)
+        self.turn_goal = self.turn_w0 - dw
+        fast_down = (e * a_z) > 0            # +yaw needed: fast down, slow back up
+        self.turn_order = ("fast", "slow") if fast_down else ("slow", "fast")
+        self.turn_stage = self.turn_order[0]
+        self.phase, self.t_phase = "turn", d.time
+
+    def yaw_rate(self):
+        R = self.d.xmat[self.body].reshape(3, 3)
+        return float((R @ self.d.qvel[3:6])[2])
+
+    def yaw_wheel_ref(self):
+        """Heading hold / turning. On its point foot the balanced robot turns at a rate
+        proportional to the wheel speed it balances at (measured: ~ -0.04 deg/s per
+        rad/s; the balance torque's vertical component through the tilted wheel axis
+        works against the foot's torsional friction). So steering = choosing the
+        wheel-speed set point. Turning -yaw needs +w, which would engage the winding
+        clutch: bigger -yaw turns go the long way round."""
+        e = self.heading_error()
+        if e < -self.yaw_short_neg:
+            e += 2 * np.pi
+        self.yaw_mode = "turn" if abs(e) > self.yaw_tol else "hold"
+        return float(np.clip(-self.yaw_K * e, -self.yaw_w_max, self.pp.w_clutch - 12.0))
+
+    def yaw_step(self, w_base):
+        """Heading control with the tilted wheel (after cubli/yaw.py): the wheel's
+        vertical torque component turns the body on its foot; only foot friction can
+        change the vertical momentum, so big turns ratchet: TURN (motor accelerates the
+        wheel, beating the foot's stiction), UNLOAD (body held by friction, wheel speed
+        bled back gently), turn again. Returns the wheel-speed offset for the balance
+        loop and sets self.yaw_uff, the motor feed-forward torque."""
+        e = self.heading_error()                    # target - heading
+        r = self.yaw_rate()
+        self.yaw_rf += (self.Ts / 0.3) * (r - self.yaw_rf)
+        moving = abs(self.yaw_rf) > np.deg2rad(0.8)
+        s, Iw, Iz, tau_s = self.wheel_axis_body[2], self.I_w, self.I_z, self.tau_s
+        centre = -self.yaw_w_turn
+        a_bleed = 0.3 * tau_s / (s * Iw)
+        dev = self.yaw_ofs - centre
+        if self.yaw_mode == "unload" and abs(dev) > 20.0:
+            pass
+        elif abs(e) < self.yaw_tol and not moving:
+            self.yaw_mode = "hold"
+        elif abs(dev) > self.yaw_w_turn:
+            self.yaw_mode = "unload"
+        else:
+            self.yaw_mode = "turn"
+        if self.yaw_mode in ("hold", "unload"):
+            a = 0.0 if moving else -np.sign(dev) * min(a_bleed, abs(dev) / 0.5)
+        else:
+            tau = Iz * (self.yaw_kp * np.clip(e, -0.5, 0.5) - self.yaw_kd * self.yaw_rf)
+            tau += (tau_s * np.sign(self.yaw_rf)) if moving else (1.3 * tau_s * np.sign(tau))
+            a = float(np.clip(-tau / (s * Iw), -self.yaw_a_max, self.yaw_a_max))
+        # stay inside [centre - w_turn, centre + w_turn] (the top is below the clutch)
+        new = float(np.clip(self.yaw_ofs + a * self.Ts, centre - self.yaw_w_turn, centre + self.yaw_w_turn))
+        a = (new - self.yaw_ofs) / self.Ts
+        self.yaw_ofs = new
+        self.yaw_uff = float(Iw * a)
+        return self.yaw_ofs
+
+    def heading(self):
+        """yaw of the body x axis (the bar) in the world, from the external tracking"""
+        R = self.d.xmat[self.body].reshape(3, 3)
+        return float(np.arctan2(R[1, 0], R[0, 0]))
+
+    def heading_error(self):
+        if self.heading_target is None:
+            return 0.0
+        return float((self.heading_target - self.heading() + np.pi) % (2 * np.pi) - np.pi)
+
+    def set_heading(self, psi=None, delta=None):
+        """hold / turn to a heading (rad); delta turns relative to the current one"""
+        if delta is not None:
+            base = self.heading_target if self.heading_target is not None else self.heading()
+            psi = base + delta
+        self.heading_target = None if psi is None else float((psi + np.pi) % (2 * np.pi) - np.pi)
+        self.yaw_hold = self.heading_target is not None
+
     def winding_torque(self):
         """spring load reflected to the motor through the cam and gear (0 in the dwell)"""
         pp = self.pp
@@ -476,7 +584,16 @@ class PogoSim:
             tau = d.time - self.t_phase
             self.ctrl.x_ref[0] = self.vault_a0 * np.exp(-self.pi_a * tau)
             self.ctrl.x_ref[1] = -self.pi_a * self.ctrl.x_ref[0]
-        if self.phase == "getup" or (self.phase == "vault" and not self.vault_lqr):
+        if self.phase in ("kick", "coast"):
+            # take-off lean: an open-loop torque doublet (+U then -U). Zero net impulse,
+            # so the pitch rate, yaw rate and wheel speed all come back to where they
+            # were; only the roll angle (low inertia) moves by the planned lean
+            tau = d.time - self.t_phase
+            u_cmd = (self.kick_U if tau < self.kick_T / 2 else -self.kick_U) if self.phase == "kick" else 0.0
+            if d.qvel[self.wd] > self.pp.w_clutch:
+                u_cmd += self.winding_torque()
+            self.ctrl.u = u_cmd
+        elif self.phase == "getup" or (self.phase == "vault" and not self.vault_lqr):
             u_cmd = self.getup_law()
             self.ctrl.u = u_cmd
             self.w_ref_s = d.qvel[self.wd]
@@ -583,6 +700,15 @@ class PogoSim:
             self.fwd = {"hop_fwd": 1, "hop_back": -1}.get(mode, 0)
             self.resume_mode = "hop" if mode.startswith("hop") else "stick"
             return
+        if mode in ("turn_left", "turn_right", "turn_left45", "turn_right45"):
+            # +yaw (counter-clockwise seen from above) is a LEFT turn for a robot whose
+            # forward is its body +y axis
+            deg = {"turn_left": 90, "turn_right": -90, "turn_left45": 45, "turn_right45": -45}[mode]
+            self.set_heading(delta=np.deg2rad(deg))
+            return
+        if mode == "hold_heading":
+            self.set_heading(self.heading())
+            return
         if mode == "flip":
             self.flip_request = True
             if self.phase == "stick":
@@ -598,6 +724,8 @@ class PogoSim:
                 self.phase = "stick"
         elif mode in ("hop_fwd", "hop_back"):
             self.fwd = 1 if mode == "hop_fwd" else -1
+            if self.has_stops and not self.yaw_hold:
+                self.set_heading(self.heading())      # go straight: hold this heading
             self.mode = "hop"
             if self.phase == "stick":
                 self.phase, self.t_phase = "settle", self.d.time
@@ -641,7 +769,7 @@ class PogoSim:
                 self.w_ref_s = d.qvel[self.wd]
         elif self.phase == "flight":
             if not self.airborne:
-                if self.fwd and abs(self.alpha_target) > np.deg2rad(1.0) and not self.flipping:
+                if self.fwd and self.use_vault and abs(self.alpha_target) > np.deg2rad(1.0) and not self.flipping:
                     # landed at the capture point: let it vault up along the separatrix
                     self.alpha_target = 0.0
                     self.phase, self.t_phase = "vault", d.time
@@ -663,24 +791,59 @@ class PogoSim:
                 # vault then brings it upright over the foot, carrying it forward.
                 # Travel is along +y for fwd=+1: alpha > 0 puts the foot toward +y, and
                 # lifting back over it spins the wheel UP (keeps the clutch winding).
-                vy = float(d.qvel[1])
+                R = d.xmat[self.body].reshape(3, 3)
+                yb = np.array([R[0, 1], R[1, 1], 0.0])
+                yb /= max(np.linalg.norm(yb), 1e-6)
+                vy = float(d.qvel[0:3] @ yb)                # velocity along the body y axis
                 cap = vy / (self.h_com * self.pi_a) * self.cp_gain
                 self.alpha_target = float(np.clip(cap + self.fwd * np.deg2rad(self.step_deg),
-                                                  -np.deg2rad(8), np.deg2rad(8)))
+                                                  -np.deg2rad(self.cp_max), np.deg2rad(self.cp_max)))
             if self.flip_request and self.wind_for_flip:
                 self.flipping, self.flip_angle, self.flip_request, self.flip_braking = True, 0.0, False, False
             self.wind_for_flip = False
+        elif self.phase == "kick":
+            if d.time - self.t_phase >= self.kick_T:
+                self.phase, self.t_phase = "coast", d.time
+        elif self.phase == "coast":
+            if d.time - self.t_phase > 0.25:          # the release did not come: back to winding
+                self.phase, self.t_phase = "wind", d.time
+                self.ctrl.u = float(d.ctrl[0])
+        elif self.phase == "turn":
+            # ratchet cycle: the FAST wheel-speed change turns the body (its yaw torque
+            # I_w a sin(zeta) beats the foot's torsional friction), the SLOW one does not.
+            # Both stages stay at or below the start speed, so the clutch never engages.
+            if self.turn_stage in ("fast", "slow") and abs(self.w_ref_s - self.turn_goal) < 1.0 \
+                    and abs(d.qvel[self.wd] - self.turn_goal) < 40.0:
+                if self.turn_stage == self.turn_order[0]:
+                    self.turn_stage = self.turn_order[1]
+                    self.turn_goal = self.turn_w0
+                else:
+                    self.turn_stage = None
+                    self.turns += 1
+                    self.phase, self.t_phase = ("settle" if self.mode == "hop" else "stick"), d.time
+            elif d.time - self.t_phase > 12.0:
+                self.turn_stage, self.phase, self.t_phase = None, ("settle" if self.mode == "hop" else "stick"), d.time
         elif self.phase == "settle":
             if self.mode == "stop" and not self.flip_request:
                 self.mode, self.phase = "stick", "stick"
             elif self.mode == "stick":
                 self.phase = "stick"
-            elif quiet and d.time - self.t_phase > self.settle_time:
+            elif quiet and d.time - self.t_phase > self.settle_time and not (
+                    self.yaw_hold and (abs(self.heading_error()) > self.yaw_tol or self.yaw_mode == "turn")):
                 self.phase, self.t_phase = "wind", d.time
                 self.wind_for_flip = self.flip_request
         elif self.phase == "wind":
             if self.mode == "stick":
                 self.phase = "stick"
+            elif self.fwd and not self.wind_for_flip and self.kick_deg > 0:
+                # start the lean doublet so that it ends exactly at the cam release
+                w = d.qvel[self.wd]
+                T = self.kick_T
+                U = -self.fwd * np.deg2rad(self.kick_deg) / (self.b_ground_signed * (T / 2) ** 2)
+                rem = ((pp.f_wind - self.cam_phase()) % 1.0) * 2 * np.pi * pp.G     # wheel rad to release
+                need = w * T + abs(U) * T * T / (4 * self.I_w)
+                if w > pp.w_clutch + 10.0 and rem <= need:
+                    self.phase, self.t_phase, self.kick_U = "kick", d.time, float(U)
         elif self.phase == "stick" and self.mode == "hop":
             self.phase, self.t_phase = "settle", d.time
         elif (self.phase == "stick" and in_wind and d.qvel[self.wd] > pp.w_clutch
@@ -702,6 +865,12 @@ class PogoSim:
             self.ctrl.x_ref[0] += np.clip(goal - self.ctrl.x_ref[0], -step, step)
         elif self.phase != "vault":
             self.ctrl.x_ref[:2] = 0.0
+        if self.phase == "turn" and self.turn_stage is not None:
+            target = self.turn_goal
+            slew = self.turn_fast if self.turn_stage == "fast" else self.turn_slow
+            self.w_ref_s += np.clip(target - self.w_ref_s, -slew * self.Ts, slew * self.Ts)
+            self.ctrl.w_ref = self.w_ref_s
+            return
         if self.phase == "wind":
             # flips wind (and so take off) with a slow wheel: the gyroscopic pitch
             # error of the flip grows with the wheel speed
@@ -712,6 +881,10 @@ class PogoSim:
             target = self.w_park                     # stick: keep the clutch well disengaged
         if self.phase == "flight":
             self.w_ref_s = d.qvel[self.wd]          # touch down with the wheel speed it has
+        if self.yaw_hold and self.phase in ("stick", "settle") and not self.airborne:
+            target = self.yaw_wheel_ref()           # steer by the balance wheel speed
+        else:
+            self.yaw_mode = "off"
         step = self.w_slew * self.Ts
         self.w_ref_s += np.clip(target - self.w_ref_s, -step, step)
         self.ctrl.w_ref = self.w_ref_s

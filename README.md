@@ -399,7 +399,7 @@ The simulation is built from the parts list below. Mass, centre of mass and iner
 ![drivetrain](media/pogo_small_drivetrain.png)
 
 - **Motor:** KV1300 on 3S gives Kt = 7.35 mN·m/A. The board limit of 40 A gives **0.29 N·m** peak, and 12 A continuous (in a vented printed frame) gives 0.09 N·m. No-load speed is 1510 rad/s; the flywheel is software-limited to 1000 rad/s (30 m/s rim speed, 20 J).
-- **Flywheel:** a steel ring OD 60 × ID 48 × 6 mm bolted to the motor bell (a large washer works). I = 4.1·10⁻⁵ kg·m².
+- **Flywheel:** a steel ring OD 60 × ID 48 × 6 mm bolted to the motor bell (a large washer works). I = 4.1·10⁻⁵ kg·m². The motor axis is tilted 20° up out of the body plane, which gives it yaw authority.
 - **Winding drivetrain:** printed centrifugal clutch → sprag needle bearing → printed 20:1 spur gears → printed snail cam (20 mm rise over 144°, then a step) → roller follower and bell-crank → braided line → foot slider.
   - Spring: 2 N/mm (20 → 60 N, 0.8 J stored).
   - Cam torque: 0.48 N·m, which is only **0.03 N·m on the motor**. The balance controller gets that as a feed-forward.
@@ -421,11 +421,15 @@ What it does (8 noise seeds each):
 | behaviour | result |
 |---|---|
 | stand as a stick | 8/8 |
-| hop continuously → stop → stick | 8/8: 6–7 hops per 20 s, apex ≈ 12 cm, 0–1 jumps after "stop" |
+| hop continuously → stop → stick | 8/8: 8–8 hops per 20 s, apex ≈ 12 cm, 0–1 jumps after "stop" |
 | somersault (360° about the bar in the air) and land | 8/8 |
-| **get up after falling onto a skid or pod** (starting at rest on it, 8 directions) | **10/11**, up in 0.3–2.9 s |
+| **get up after falling onto a skid or pod** (starting at rest on it, 8 directions) | **10/11**, up in 0.3–4.3 s |
 | get up after being knocked over (10 pushes, 0.6–1.5 N) | 9/10 |
-| hop forward (30 s) | never overturns (8/8); travels [-28, 47, 4, 22, 13, -12, 9, 20] cm (forward in 6/8), drifts [9, -28, 8, -12, -7, -1, -11, -11] cm along the bar |
+| **hop forward, holding heading** (30 s) | **8/8**: 25–29 cm straight ahead, ≤ 1 cm sideways, 0 skid touches |
+| **hop forward 24 s → turn left 90° → hop forward** | **8/8**: leg 1 20–25 cm at -1…-0°, leg 2 20–24 cm at 84…86° |
+| hop forward → turn right 90° → hop forward | 8/8: leg 2 at -94…-87° (shorter, 7–12 cm, because the right turn goes the long way round) |
+
+![paths](media/pogo_small_paths.png)
 
 **How it gets up.** The wheel drives the roll rate onto the inverted pendulum's separatrix, ω = −π_a·α: the exact rate that coasts to upright and stops there. The law re-tracks that curve every step, and the balance controller takes over near upright.
 
@@ -433,9 +437,22 @@ If lifting would leave the wheel spinning above the clutch speed, which would fi
 
 A pure pitch fall (resting on a pod at ≈ 6°) is recovered by the balance controller itself. The remaining failures are one diagonal rest pose and one hard push, which fall back repeatedly.
 
-**Hopping forward is experimental and weak.** Horizontal travel needs a lean at take-off, and any roll lean made through the 45° wheel also drives pitch, which cannot be controlled in the air.
+**How it hops forward.** "Forward" is the robot's own +y axis, perpendicular to the bar, the way a tightrope walker carries a pole.
 
-The version that works best tilts the body 6° about the bar in flight, so the foot lands ahead of the centre of mass, and the get-up law then lifts it back over the foot. It never falls over, but the direction is unreliable, and it touches a skid after most landings. A second, independent wheel (the original Cubli's answer) or an actuated leg angle would fix this.
+- **Take-off lean.** Horizontal speed can only come from a lean at take-off. Just before the cam releases (the release time follows from the cam angle and wheel speed), an open-loop torque doublet (+U then −U, 0.12 s) leans the body ≈ 1–2° in roll.
+  - Its net torque impulse is zero, so the pitch rate, yaw rate and wheel speed all end where they started. Only the low-inertia roll angle moves.
+  - An earlier version leaned with the balance controller instead. Through the 45° wheel that also drove pitch, which can't be corrected in the air, and it fell after most landings.
+- **Landing.** In the air, the flight law turns the body about the bar so the foot lands half-way to the capture point, and the balance controller catches it. Each hop covers ≈ 3 cm.
+- **Tilted wheel.** The wheel axis is tilted up 20°. That costs ≈ 6% of roll/pitch authority and gives yaw authority.
+
+**How it turns.** On its point foot the balanced robot turns at a rate proportional to the wheel speed it balances at: measured ≈ −0.04°/s per rad/s, linear from −400 to +100 rad/s. The balance torque's vertical component, through the tilted axis, works against the foot's small torsional friction.
+
+- So steering is just the wheel-speed set point: w = −K·(heading error), clipped. Heading comes from the external tracking.
+- Turning left needs a negative wheel speed: up to ≈ 14°/s, 90° in ≈ 10 s. It holds the heading to within 1°.
+- Turning right needs a positive wheel speed, which would engage the winding clutch. So right turns larger than 20° go the long way round, and small corrections run at ≲ 0.4°/s.
+- While hopping, it finishes any turn before it starts winding the next jump. Each wind turns it ≈ 4° to the right (the wheel runs forward to wind), and the next stance corrects that.
+
+Limits: it is slow, ≈ 1 cm/s of travel. The foot's torsional friction (0.5 mm × normal force) is a modelling assumption; a slipperier or grippier foot changes the turn rate. Right turns are slow unless the clutch engaged at a higher speed, which would cost somersault accuracy.
 
 ## Live interactive viewer
 

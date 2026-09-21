@@ -118,8 +118,12 @@ class LivePogo(LiveRolling):
                 self.message = "getting up: wheel drives the roll rate onto the coast-to-upright curve"
             elif s["phase"] == "vault":
                 self.message = "hop forward: landed with the foot ahead, lifting back over it"
+            elif pg.yaw_hold and pg.yaw_mode == "turn" and s["phase"] in ("stick", "settle"):
+                self.message = ("turning: the balance wheel speed is the steering (yaw rate ~ -0.04 deg/s "
+                                "per rad/s through the tilted wheel)")
             elif pg.fwd and s["mode"] == "hop":
-                self.message = "hopping forward (experimental): foot lands 6 deg ahead in each hop"
+                self.message = ("hopping forward: a torque doublet leans it 1 deg just before the spring fires, "
+                                "the foot lands near the capture point, heading held between hops")
             elif pg.flipping:
                 self.message = "somersault: flipping about the bar in the air"
             elif pg.flip_request:
@@ -149,7 +153,10 @@ class LivePogo(LiveRolling):
                               small=self.small, getups=int(pg.getups), down=bool(s["down"]),
                               energy_mWh=1000 * float(s["energy_Wh"]),
                               battery_pct=(100 * (1 - float(s["energy_Wh"]) / pg.pp.hw.battery.Wh)) if self.small else None,
-                              fwd=int(pg.fwd), y_cm=100 * float(s["y"]), x_cm=100 * float(s["x"])))
+                              fwd=int(pg.fwd), y_cm=100 * float(s["y"]), x_cm=100 * float(s["x"]),
+                              heading_deg=float(np.rad2deg(pg.heading())),
+                              heading_target_deg=(None if pg.heading_target is None
+                                                  else float(np.rad2deg(pg.heading_target)))))
 
     # ----------------------------------------------------------- rendering
     def render_jpeg(self, quality=80):

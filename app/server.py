@@ -170,7 +170,8 @@ def handle(cmd):
         if name in ("somersault", "jump"):
             sim.start(name, w_spin=float(cmd.get("w_spin", 420)),
                       w_rev=None if cmd.get("w_rev") is None else float(cmd["w_rev"]))
-        elif name in ("hop", "stop", "stick", "flip", "hop_fwd", "knock"):
+        elif name in ("hop", "stop", "stick", "flip", "hop_fwd", "knock", "turn_left", "turn_right",
+                      "turn_left45", "turn_right45", "hold_heading"):
             sim.start(name)
         elif name == "settle":
             sim.settle()

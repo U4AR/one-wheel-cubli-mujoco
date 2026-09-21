@@ -47,3 +47,22 @@ def test_small_gets_up_after_falling_on_a_skid():
     s = run(sim, 8.0)
     assert not s["fallen"] and not s["down"] and s["phase"] == "stick"
     assert abs(s["alpha"]) + abs(s["beta"]) < 2.0 and sim.getups >= 1
+
+
+def test_small_hops_forward_turns_and_hops_forward():
+    import numpy as np
+    sim = PogoSim(PP, seed=1)
+    run(sim, 1.0)
+    psi0 = sim.heading()
+    f0 = np.array([-np.sin(psi0), np.cos(psi0)])
+    p0 = sim.d.qpos[:2].copy()
+    s = run(sim, 22.0, [(1.0, "hop_fwd")])
+    leg1 = sim.d.qpos[:2] - p0
+    assert not s["fallen"] and leg1 @ f0 > 0.12 and abs(leg1 @ np.array([f0[1], -f0[0]])) < 0.04
+    sim.set_mode("turn_left")
+    p1 = sim.d.qpos[:2].copy()
+    s = run(sim, 48.0)
+    leg2 = sim.d.qpos[:2] - p1
+    left = np.array([-f0[1], f0[0]])               # +90 deg from the start direction
+    assert not s["fallen"] and leg2 @ left > 0.08
+    assert abs(np.rad2deg(sim.heading_error())) < 12

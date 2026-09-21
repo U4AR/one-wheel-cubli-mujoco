@@ -92,12 +92,69 @@ def knock(args):
 
 
 def forward(seed):
+    """hop forward for 30 s holding the start heading (body +y is forward)"""
     sim = PogoSim(PP, seed=seed)
     _run_until(sim, 1.0)
-    y0 = float(sim.d.qpos[1])
+    psi0 = sim.heading()
+    f0 = np.array([-np.sin(psi0), np.cos(psi0)])
+    p0 = sim.d.qpos[:2].copy()
     s = _run_until(sim, 31.0, [(0.0, "hop_fwd")])
-    return dict(ok=not s["fallen"], jumps=sim.jumps, forward_m=round(float(s["y"]) - y0, 3),
-                sideways_m=round(float(s["x"]), 3), skid_touches=sim.getups)
+    dp = sim.d.qpos[:2] - p0
+    return dict(ok=not s["fallen"] and float(dp @ f0) > 0.1, jumps=sim.jumps, forward_m=round(float(dp @ f0), 3),
+                sideways_m=round(float(dp @ np.array([f0[1], -f0[0]])), 3), skid_touches=sim.getups,
+                heading_err_deg=round(float(np.rad2deg(sim.heading_error())), 1))
+
+
+def go(args):
+    """hop forward 24 s, turn (left = +90, right = -90), hop forward again; returns the path"""
+    seed, turn = args
+    sim = PogoSim(PP, seed=seed)
+    _run_until(sim, 1.0)
+    psi0 = sim.heading()
+    f0 = np.array([-np.sin(psi0), np.cos(psi0)])
+    path, turned, p_turn = [], False, None
+    sim.set_mode("hop_fwd")
+    while sim.d.time < 70.0:
+        if not turned and sim.d.time >= 25.0:
+            sim.set_mode("turn_left" if turn > 0 else "turn_right")
+            turned, p_turn = True, sim.d.qpos[:2].copy()
+        sim.step()
+        if int(round(sim.d.time / sim.Ts)) % 20 == 0:
+            path.append([round(float(v), 4) for v in sim.d.qpos[:2]])
+        if sim.state()["fallen"]:
+            break
+    s = sim.state()
+    p0 = np.array(path[0])
+    leg1, leg2 = p_turn - p0, sim.d.qpos[:2] - p_turn
+
+    def ang(v):
+        return round(float(np.rad2deg(np.arctan2(v[1], v[0]) - np.arctan2(f0[1], f0[0])) + 180) % 360 - 180, 1)
+    ok = (not s["fallen"] and np.linalg.norm(leg1) > 0.1 and abs(ang(leg1)) < 15
+          and abs(((ang(leg2) - turn) + 180) % 360 - 180) < 30)
+    return dict(ok=bool(ok), turn=turn, leg1_m=round(float(np.linalg.norm(leg1)), 3), leg1_dir_deg=ang(leg1),
+                leg2_m=round(float(np.linalg.norm(leg2)), 3), leg2_dir_deg=ang(leg2), jumps=sim.jumps,
+                skid_touches=sim.getups, path=path, psi0=psi0)
+
+
+def path_figure(runs, path="media/pogo_small_paths.png"):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, axs = plt.subplots(1, 2, figsize=(11, 5.2))
+    for ax, turn in zip(axs, (90, -90)):
+        for r in [r for r in runs if r["turn"] == turn]:
+            P_ = np.array(r["path"])
+            c, s_ = np.cos(-r["psi0"]), np.sin(-r["psi0"])
+            Q = (P_ - P_[0]) @ np.array([[c, s_], [-s_, c]])     # rotate: start heading -> +y
+            ax.plot(100 * Q[:, 0], 100 * Q[:, 1], lw=1.2)
+        ax.plot(0, 0, "ko")
+        ax.annotate("", (0, 12), (0, 0), arrowprops=dict(arrowstyle="->", lw=2))
+        ax.set_aspect("equal"); ax.grid(alpha=0.3)
+        ax.set_xlabel("sideways (cm)"); ax.set_ylabel("forward (cm)")
+        ax.set_title(f"hop forward 24 s, turn {'left 90' if turn > 0 else 'right 90 (long way round)'}, "
+                     "hop forward\n8 noise seeds, top view")
+    fig.tight_layout()
+    fig.savefig(path, dpi=110)
 
 
 def drivetrain_figure(path="media/pogo_small_drivetrain.png"):
@@ -152,6 +209,7 @@ def video(path="media/pogo_small"):
     cam.lookat[:] = [0, 0, 0.12]
     frames, slow, k = [], [], [0]
     push = dict(t0=None, f=np.zeros(3))
+    cam.distance = 1.6
 
     def h():
         sim.d.xfrc_applied[:] = 0
@@ -159,8 +217,9 @@ def video(path="media/pogo_small"):
             sim.d.xfrc_applied[sim.body, :3] = push["f"]
     sim.substep_hook = h
     captions = [(0.0, "stands as a stick"), (1.0, "hop"), (9.0, "stop -> stick"), (12.0, "somersault"),
-                (19.0, "knocked over -> gets up by itself"), (25.0, "hop forward"), (44.0, "")]
-    sched = [(1.0, "hop"), (9.0, "stop"), (12.0, "flip"), (25.0, "hop_fwd")]
+                (19.0, "knocked over -> gets up by itself"), (25.0, "hop forward (holding heading)"),
+                (47.0, "turn left 90 deg (wheel-speed steering)"), (58.0, "hop forward on the new heading"), (80.0, "")]
+    sched = [(1.0, "hop"), (9.0, "stop"), (12.0, "flip"), (25.0, "hop_fwd"), (47.0, "turn_left")]
 
     def cap(t):
         c = ""
@@ -170,7 +229,7 @@ def video(path="media/pogo_small"):
         return c
 
     every = int(round(0.04 / sim.Ts))
-    while sim.d.time < 44.0:
+    while sim.d.time < 80.0:
         if sched and sim.d.time >= sched[0][0]:
             sim.set_mode(sched.pop(0)[1])
         if push["t0"] is None and sim.d.time >= 19.5:
@@ -186,7 +245,8 @@ def video(path="media/pogo_small"):
         s = sim.state()
         im = Image.fromarray(r.render().copy())
         dr = ImageDraw.Draw(im)
-        dr.text((16, 12), f"t={s['t']:5.2f}s  {cap(s['t'])}   [{s['mode']}/{s['phase']}]  jumps={s['jumps']}  "
+        hd = float(np.rad2deg(sim.heading()))
+        dr.text((16, 12), f"t={s['t']:5.2f}s  heading {hd:+5.0f} deg  {cap(s['t'])}   [{s['mode']}/{s['phase']}]  jumps={s['jumps']}  "
                           f"flips={sim.flips}  get-ups={sim.getups}  wheel={s['wheel']:+.0f} rad/s  "
                           f"battery used {1000 * s['energy_Wh']:.1f} mWh", fill=(255, 255, 255))
         img = np.asarray(im)
@@ -214,9 +274,11 @@ if __name__ == "__main__":
     with Pool(24) as pool:
         jobs = dict(stick=pool.map_async(stick, range(8)), hop_stop=pool.map_async(hop_stop, range(8)),
                     flip=pool.map_async(flip, range(8)), fallen=pool.map_async(fallen, fallen_jobs),
-                    knock=pool.map_async(knock, knock_jobs), forward=pool.map_async(forward, range(8)))
+                    knock=pool.map_async(knock, knock_jobs), forward=pool.map_async(forward, range(8)),
+                    go=pool.map_async(go, [(sd, t) for t in (90, -90) for sd in range(8)]))
         res = {k: v.get() for k, v in jobs.items()}
     drivetrain_figure()
+    path_figure(res["go"])
     hs = res["hop_stop"]
     power_W = float(np.mean([h["energy_Wh"] for h in hs])) * 3600 / 28.0
     summary = {k: f"{sum(r['ok'] for r in v)}/{len(v)}" for k, v in res.items()}
@@ -226,6 +288,9 @@ if __name__ == "__main__":
         apex_cm=float(np.mean([h["apex_cm"] for h in hs])),
         forward_cm_per_30s=[round(100 * f["forward_m"]) for f in res["forward"]],
         sideways_cm_per_30s=[round(100 * f["sideways_m"]) for f in res["forward"]],
+        forward_skid_touches=[f["skid_touches"] for f in res["forward"]],
+        go_left=[(g["leg1_m"], g["leg1_dir_deg"], g["leg2_m"], g["leg2_dir_deg"]) for g in res["go"] if g["turn"] > 0],
+        go_right=[(g["leg1_m"], g["leg1_dir_deg"], g["leg2_m"], g["leg2_dir_deg"]) for g in res["go"] if g["turn"] < 0],
         getup_time_s=[f["t_up_s"] for f in res["fallen"]],
         mean_power_hopping_W=round(power_W, 2),
         runtime_hopping_h=round(bom["battery"]["energy_Wh"] * 0.8 / power_W, 1),
