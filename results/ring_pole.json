@@ -1,0 +1,55 @@
+{
+ "none": {
+  "unstable_rates": [
+   4.97,
+   4.54
+  ],
+  "gains_alpha_beta": [
+   -982.2,
+   1036.8
+  ],
+  "peak_torque_at_that_tilt": 3.4,
+  "recovers_from_tilt_deg": 0.1
+ },
+ "rigid": {
+  "unstable_rates": [
+   5.08,
+   3.75
+  ],
+  "gains_alpha_beta": [
+   -390.8,
+   471.7
+  ],
+  "peak_torque_at_that_tilt": 3.4,
+  "recovers_from_tilt_deg": 0.5,
+  "max_drop_on_hoop_edge_N": 2.22
+ },
+ "gimbal": {
+  "error": "Failed to find a finite solution."
+ },
+ "gimbal+hang": {
+  "unstable_rates": [
+   5.15,
+   4.74
+  ],
+  "gains_alpha_beta": [
+   -1417.5,
+   1528.8
+  ],
+  "peak_torque_at_that_tilt": 3.4,
+  "recovers_from_tilt_deg": 0.1
+ },
+ "gimbal+motor": {
+  "unstable_rates": [
+   5.08,
+   4.74
+  ],
+  "gains_alpha_beta": [
+   -60.7,
+   -1.4
+  ],
+  "peak_torque_at_that_tilt": 1.22,
+  "recovers_from_tilt_deg": 1,
+  "max_drop_on_hoop_edge_N": 7.97
+ }
+}

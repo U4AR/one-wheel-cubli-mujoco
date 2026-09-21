@@ -30,6 +30,11 @@ class CubliParams:
     core_raise: float = 0.0   # m, housing (+wheel, IMUs) raised above the pivot
     ring_weights: float = 0.0 # kg, each of two point masses on the hoop at 3 and 9 o'clock
     core_extra_mass: float = 0.0  # kg, extra motor mass in the housing (at the wheel centre)
+    # balancing pole on the ring variant: the paper's tube + end masses, mounted at
+    # height pole_mount (above the pivot, in the body frame)
+    pole: str = "none"        # "none" | "rigid" | "gimbal" (2-axis gimbal, stays level)
+    pole_mount: float = 0.0   # m
+    pole_drop: float = 0.0    # m, pole CoM below the gimbal centre (pendulous if > 0)
 
     def scaled_actuator(self, k_motor=1.0, k_wheel=1.0, motor_mass=0.36):
         """Bigger motor (torques x k_motor, motor mass grows proportionally) and
@@ -97,8 +102,9 @@ class CubliParams:
     @property
     def m_total(self):
         if self.layout == "ring":
+            mp = (2 * self.m_e + 1560.0 * 7.225e-5 * 2 * self.l_E) if self.pole != "none" else 0.0
             return (self.housing_without_tube()[0] + self.m_w + self.ring_mass
-                    + 2 * self.ring_weights + self.core_extra_mass)
+                    + 2 * self.ring_weights + self.core_extra_mass + mp)
         return self.m_h + self.m_w + 2 * self.m_e
 
     def beam_freq_hz(self, l_free=0.523):

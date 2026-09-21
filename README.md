@@ -218,6 +218,18 @@ All three layouts can be picked in the live viewer (Plant → Layout).
 
 The hoop's tilt frequencies are nearly equal (ε = 0.91), so correcting a small error in the weakly controllable direction takes seconds of large, coordinated swings (25–65× the error). That makes the hoop hypersensitive to sensor error, and a heavier actuator at the centre makes ε worse. A bigger motor is not the fix. The fix is restoring the inertia asymmetry (flattened hoop, or a hoop on a post).
 
+**Hoop plus a balancing pole that always stays level?** (`scripts/ring_pole.py`) This is hoop A with the paper's tube and end masses mounted at the hoop centre. It uses the most generous controller setting: perfect state feedback, the 10 ms delay compensated, and the paper's motor limits.
+
+| pole | unstable rates (rad/s) | recovers from | max drop on hoop edge |
+|---|---|---|---|
+| none | 4.97 / 4.54 | 0.1° | – |
+| rigid (rotates with the body, like the paper) | 5.08 / 3.75 | 0.5° | 2.2 N |
+| level on a free gimbal | 5.08 / 4.74 | not controllable (the pole's angles are decoupled) | – |
+| level, hanging 5 cm below its gimbal | 5.15 / 4.74 | 0.1° | – |
+| level, held by its own gimbal motor (2 actuators) | 5.08 / 4.74 | 1° | ≥ 8 N |
+
+A pole only helps if the body has to rotate it; that is where its inertia comes from. If it stays level, the body never swings it. Its rotational inertia is decoupled, and it acts exactly like a point mass at the mount: the unstable rates match to 0.05 %. That adds roll and pitch inertia equally, making things worse. The only level-pole version that works uses a second motor to hold the pole level. That motor then pushes on the body, so the system is no longer single-actuator.
+
 ## Live interactive viewer
 
 `app/server.py` runs the real MuJoCo plant and the full estimator/controller in real time, and streams it to your browser:

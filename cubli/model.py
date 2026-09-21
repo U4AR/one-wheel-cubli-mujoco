@@ -103,6 +103,21 @@ def build_xml(p: CubliParams = NOMINAL, timestep=5e-4, ground_limits=False) -> s
         <geom type="capsule" fromto="0 0 0 {p.l_E} 0 0" size="0.012" material="carbon" contype="0" conaffinity="0"/>
         <geom type="cylinder" pos="{p.l_E} 0 0" size="0.03 0.025" euler="0 1.5708 0" material="mass" contype="0" conaffinity="0"/>
       </body>"""
+    if ring and p.pole != "none":
+        mt = 1560.0 * 7.225e-5 * 2 * p.l_E
+        mp = 2 * p.m_e + mt
+        Iyy = 2 * p.m_e * p.l_E**2 + mt * (2 * p.l_E)**2 / 12
+        joints = ("" if p.pole == "rigid" else
+                  '        <joint name="pole_r" type="hinge" axis="1 0 0" limited="false" damping="0.002"/>\n'
+                  '        <joint name="pole_p" type="hinge" axis="0 1 0" limited="false" damping="0.002"/>\n')
+        mass_bodies += f"""
+      <body name="pole" pos="0 0 {p.pole_mount}">
+{joints}        <inertial pos="0 0 {-p.pole_drop}" mass="{mp}" diaginertia="1e-5 {Iyy} {Iyy}"/>
+        <geom type="capsule" fromto="{-p.l_E} 0 {-p.pole_drop} {p.l_E} 0 {-p.pole_drop}" size="0.012" material="carbon" contype="0" conaffinity="0"/>
+        <geom type="cylinder" pos="{-p.l_E} 0 {-p.pole_drop}" size="0.03 0.025" euler="0 1.5708 0" material="wheel" contype="0" conaffinity="0"/>
+        <geom type="cylinder" pos="{p.l_E} 0 {-p.pole_drop}" size="0.03 0.025" euler="0 1.5708 0" material="wheel" contype="0" conaffinity="0"/>
+        <geom type="sphere" size="0.018" material="alu" contype="0" conaffinity="0"/>
+      </body>"""
     tip_geom = (f'      <geom type="capsule" fromto="0 0 0.004 0 0 {zr + 0.06}" size="0.006" material="alu" contype="0" conaffinity="0"/>'
                 if zr > 0 else "")
     extra_body = ""
