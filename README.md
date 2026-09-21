@@ -315,6 +315,57 @@ For this, the paper device is simulated as a **free body on the floor**, with co
 - **A real airborne flip is impossible.** Reaction wheels give no upward thrust. Lifting off by spinning about the contact would need ≈ 7.4 rad/s, and the wheel's whole momentum gives at most ≈ 4.6 rad/s.
 - **Jump-up to balance** (flip up onto the tip and catch it, like the original Cubli): **not achieved.** The energy is there: a throw delivers the body to within 2–4° of upright. But on the free body the balance LQR recovers from only ≈ 3–5° of tilt at rest, since roll errors need big coupled pitch swings of the heavy bar. The throw arrives still moving and with little wheel authority left. Energy-shaping swing-up and throw-plus-trim strategies hit the same limit. The three-wheel Cubli can jump up because each axis has its own wheel; with one wheel the catch region is too small for this motor and wheel.
 
+### One motor that balances AND jumps: the pogo cross (`cubli/pogo.py`, `scripts/pogo.py`)
+
+![pogo](media/pogo.gif)
+
+The paper's device, stood upright as a **cross**: the housing and wheel in the middle, the cantilever with its end masses across the top, and a short **sprung pogo leg** (3 cm fixed + 5 cm stroke) underneath. There is still **one motor**. It drives the reaction wheel, and the wheel shaft also winds and fires the spring:
+
+```
+wheel ─ centrifugal clutch (20 rad/s) ─ ratchet ─ 20:1 ─ snail cam ─ follower ─ foot
+```
+
+- **Winding.** Over 40% of each cam turn, the cam pulls the foot in. The spring (4 kN/m, 2 cm preload) goes from 80 N to 240 N, storing ≈ 6 J.
+- **Firing.** At the cam step the follower drops off, the spring fires the leg, and the body takes off.
+- **Timing.** A release happens every G·f = 8 wheel turns, so the wheel speed alone decides whether and how often it jumps:
+  - above the clutch speed, it hops;
+  - parked below it (−80 rad/s), it stands still as a **stick**.
+- **Winding cost.** The winding load comes back through the gear as ≈ 0.2 N·m on the same motor, and the reaction goes into the body. The balance loop absorbs it.
+- **Landing.** A rebound escapement, tripped by the touchdown impact, lets the leg compress freely but re-extend at only 10 cm/s, so landings don't bounce.
+
+Control is still one torque:
+
+| phase | controller |
+|---|---|
+| foot loaded | paper-style discrete LQR (tilt, rates, wheel speed; one-step delay predictor), design model pinned at the foot |
+| foot unloaded | a foot-contact switch, checked every 0.5 ms step, hands the motor to a flight law. In the air there is no gravity torque, and the wheel can turn the body about only one direction, ≈ the bar axis (it acts on body roll 60× more than on pitch) |
+| somersault | in flight: full reverse torque to spin the body about the bar axis, then a braking-guidance law (constant deceleration blended into a linear final approach on the measured tilt), which stops the rotation at exactly 360° |
+
+The leg raises the centre of mass, and that spoils the inertia ratio the single-wheel balance relies on (ε 0.45 → 0.58 with the paper's bar). Lengthening the cantilever from 0.60 m to **0.90 m** per side restores it (ε = 0.44).
+
+Scenario on 8 noise seeds: stick → hop continuously for 20 s → stop → stick → somersault → stick → second somersault → stick.
+
+| | result |
+|---|---|
+| survived the whole 56 s scenario | **8 / 8** |
+| stays vertical as a stick | yes: 6 s with no jump, tilt < 1° |
+| continuous hopping | 5–6 hops in the 20 s window (one every ≈ 3.3 s at a 60 rad/s hop speed), apex **≈ 17.6 cm** (CoM rise after lift-off), peak tilt ≤ 2.3°, drift ≈ 10 cm |
+| stop → stick | 0–1 more jumps, then a stick again in 0.1–3.5 s |
+| somersaults landed | **16 / 16**: 360° about the bar axis in ≈ 0.30 s of a ≈ 0.39 s flight; lands at ≈ 0.1° roll / 0.5° pitch; all 8 runs end as a balanced stick |
+
+What it took (each step was a failure mode in simulation first):
+
+- **Flight mode.** The stance LQR in the air saturates the motor. A 10 ms control period of stance torque during an unplanned 20 ms rebound is enough to spin the low-inertia roll axis at 140°/s. So the flight switch runs every physics step, from foot load, not once per control period.
+- **Landing wheel speed.** At touchdown the wheel-speed reference starts from the actual wheel speed, and the predictor is not fed in-flight data.
+- **Takeoff wheel speed.** The flip's gyroscopic pitch error grows with the wheel speed at takeoff, about 1.5° per 100 rad/s. That is why a somersault winds with a slow wheel (30 rad/s) and the clutch engages at 20 rad/s. The time-optimal flip needs ≈ 0.30 s, so the jump must reach ≈ 17 cm.
+
+Caveats:
+
+- The cam, clutch, ratchet and escapement are idealised. The cam and escapement are a moving upper limit on the leg joint, the clutch is a speed threshold, and the escapement pays out at a fixed rate.
+- The foot load cell and the tilt states are measured directly, with noise, instead of by the paper's IMU estimator. In flight a real IMU sees free fall, so a real tilt estimate there would come from gyro integration.
+- A somersault landing usually needs **one extra, controlled hop** before it is a stick again. Correcting the ≈ 0.5° landing pitch through the 45° wheel swings the wheel above the clutch speed, the cam winds, and the controller flies that jump deliberately instead of letting it fire at a random wheel speed.
+- Hopping at 90 rad/s is faster (one hop every ≈ 2.3 s, 8/8 seeds survive), but stopping then takes up to four more hops. The default is 60 rad/s; the viewer has a slider.
+
 ## Live interactive viewer
 
 `app/server.py` runs the real MuJoCo plant and the full estimator/controller in real time, and streams it to your browser:
@@ -325,7 +376,7 @@ For this, the paper device is simulated as a **free body on the floor**, with co
 - live switching between paper and tuned weights, CoM estimator on/off, sensor-noise level and measurement delay;
 - plant changes (end mass, beam frequency, CoM offset), applied as a model-mismatch test;
 - a "Runs & progress" panel that launches CMA-ES tuning, the benchmark or the tests and streams their progress, including a cost-per-generation chart;
-- every experiment as a Plant → Layout: the paper bar, hoops, oval hoops, the rolling hoop with two motors or one motor, and the free-body **somersault** layout. The somersault layout has Somersault / Jump-up attempt / Drop & settle / Stand & balance buttons, throw sliders, and the phase and roll angle live;
+- every experiment as a Plant → Layout: the paper bar, hoops, oval hoops, the rolling hoop with two motors or one motor, the free-body **somersault** layout (Somersault / Jump-up attempt / Drop & settle / Stand & balance buttons, throw sliders, live phase and roll angle), and the **pogo** cross (Hop / Stop → stick / Somersault / Stick buttons, hop-speed slider, live mode, jumps, cam, clutch and escapement state; keys `H`, `X`, `F`);
 - a "Results & media" gallery with every figure, video and benchmark JSON the scripts produce.
 
 ```bash
@@ -347,9 +398,12 @@ cubli/sim.py         closed loop: plant, sensors, delay, motor envelope + I²t
 cubli/evaluate.py    benchmark scenarios, metrics, tuning objective
 cubli/tunings.py     "paper" and "tuned" controller settings
 cubli/live.py        step-wise interactive simulation for the viewer
+cubli/somersault.py  free-body cube on the floor (somersault study)
+cubli/pogo.py        pogo cross: one motor balances + winds/fires a spring leg
+cubli/live_*.py      viewer wrappers (rolling hoop, somersault, pogo)
 app/                 live web viewer (aiohttp server + single-page UI)
 scripts/             tuning, figures, video
-tests/               replication and rolling-hoop checks
+tests/               replication, rolling-hoop, somersault and pogo checks
 ```
 
 ## Credit

@@ -1,0 +1,319 @@
+{
+ "params": {
+  "l_E": 0.9,
+  "m_e": 0.304,
+  "L0": 0.03,
+  "stroke": 0.05,
+  "s_min": 0.01,
+  "preload": 0.02,
+  "k_leg": 4000.0,
+  "b_leg": 2.0,
+  "b_comp": 150.0,
+  "m_foot": 0.05,
+  "G": 20.0,
+  "f_wind": 0.4,
+  "w_clutch": 20.0,
+  "mu": 0.9
+ },
+ "inertia_ratio_eps": {
+  "l_E=0.5975": 0.584,
+  "l_E=0.7": 0.53,
+  "l_E=0.8": 0.484,
+  "l_E=0.9": 0.443
+ },
+ "schedule": [
+  [
+   1.0,
+   "hop"
+  ],
+  [
+   21.0,
+   "stop"
+  ],
+  [
+   32.0,
+   "flip"
+  ],
+  [
+   44.0,
+   "flip"
+  ]
+ ],
+ "summary": {
+  "seeds": 8,
+  "survived": 8,
+  "flips_landed": 16,
+  "flips_attempted": 16,
+  "hops_before_stop": [
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   5,
+   6
+  ],
+  "apex_mean_cm": 17.6,
+  "max_tilt_while_hopping_deg": 2.34,
+  "ended_as_stick": 8
+ },
+ "runs": [
+  {
+   "seed": 0,
+   "fell": false,
+   "t_end": 56.0,
+   "events": [
+    [
+     1.01,
+     "hop"
+    ],
+    [
+     21.01,
+     "stop"
+    ],
+    [
+     32.01,
+     "flip"
+    ],
+    [
+     44.0,
+     "flip"
+    ]
+   ],
+   "hops_before_stop": 5,
+   "jumps_total": 10,
+   "flips": 2,
+   "apex_mean_cm": 17.8,
+   "max_tilt_while_hopping_deg": 2.3,
+   "stick_after_stop_at": 22.22,
+   "final_phase": "stick",
+   "final_tilt_deg": 0.21,
+   "drift_m": 0.123
+  },
+  {
+   "seed": 1,
+   "fell": false,
+   "t_end": 56.0,
+   "events": [
+    [
+     1.01,
+     "hop"
+    ],
+    [
+     21.01,
+     "stop"
+    ],
+    [
+     32.01,
+     "flip"
+    ],
+    [
+     44.0,
+     "flip"
+    ]
+   ],
+   "hops_before_stop": 5,
+   "jumps_total": 11,
+   "flips": 2,
+   "apex_mean_cm": 17.7,
+   "max_tilt_while_hopping_deg": 1.76,
+   "stick_after_stop_at": 23.29,
+   "final_phase": "stick",
+   "final_tilt_deg": 0.07,
+   "drift_m": 0.178
+  },
+  {
+   "seed": 2,
+   "fell": false,
+   "t_end": 56.0,
+   "events": [
+    [
+     1.01,
+     "hop"
+    ],
+    [
+     21.01,
+     "stop"
+    ],
+    [
+     32.01,
+     "flip"
+    ],
+    [
+     44.0,
+     "flip"
+    ]
+   ],
+   "hops_before_stop": 5,
+   "jumps_total": 11,
+   "flips": 2,
+   "apex_mean_cm": 17.9,
+   "max_tilt_while_hopping_deg": 1.74,
+   "stick_after_stop_at": 23.29,
+   "final_phase": "stick",
+   "final_tilt_deg": 0.84,
+   "drift_m": 0.135
+  },
+  {
+   "seed": 3,
+   "fell": false,
+   "t_end": 56.0,
+   "events": [
+    [
+     1.01,
+     "hop"
+    ],
+    [
+     21.01,
+     "stop"
+    ],
+    [
+     32.01,
+     "flip"
+    ],
+    [
+     44.0,
+     "flip"
+    ]
+   ],
+   "hops_before_stop": 5,
+   "jumps_total": 11,
+   "flips": 2,
+   "apex_mean_cm": 17.4,
+   "max_tilt_while_hopping_deg": 2.34,
+   "stick_after_stop_at": 22.64,
+   "final_phase": "stick",
+   "final_tilt_deg": 0.02,
+   "drift_m": 0.075
+  },
+  {
+   "seed": 4,
+   "fell": false,
+   "t_end": 56.0,
+   "events": [
+    [
+     1.01,
+     "hop"
+    ],
+    [
+     21.01,
+     "stop"
+    ],
+    [
+     32.01,
+     "flip"
+    ],
+    [
+     44.0,
+     "flip"
+    ]
+   ],
+   "hops_before_stop": 5,
+   "jumps_total": 10,
+   "flips": 2,
+   "apex_mean_cm": 17.7,
+   "max_tilt_while_hopping_deg": 1.77,
+   "stick_after_stop_at": 22.19,
+   "final_phase": "stick",
+   "final_tilt_deg": 0.36,
+   "drift_m": 0.065
+  },
+  {
+   "seed": 5,
+   "fell": false,
+   "t_end": 56.0,
+   "events": [
+    [
+     1.01,
+     "hop"
+    ],
+    [
+     21.01,
+     "stop"
+    ],
+    [
+     32.01,
+     "flip"
+    ],
+    [
+     44.0,
+     "flip"
+    ]
+   ],
+   "hops_before_stop": 5,
+   "jumps_total": 11,
+   "flips": 2,
+   "apex_mean_cm": 17.5,
+   "max_tilt_while_hopping_deg": 2.3,
+   "stick_after_stop_at": 22.7,
+   "final_phase": "stick",
+   "final_tilt_deg": 0.11,
+   "drift_m": 0.075
+  },
+  {
+   "seed": 6,
+   "fell": false,
+   "t_end": 56.0,
+   "events": [
+    [
+     1.01,
+     "hop"
+    ],
+    [
+     21.01,
+     "stop"
+    ],
+    [
+     32.01,
+     "flip"
+    ],
+    [
+     44.0,
+     "flip"
+    ]
+   ],
+   "hops_before_stop": 5,
+   "jumps_total": 10,
+   "flips": 2,
+   "apex_mean_cm": 17.3,
+   "max_tilt_while_hopping_deg": 1.42,
+   "stick_after_stop_at": 22.36,
+   "final_phase": "stick",
+   "final_tilt_deg": 0.15,
+   "drift_m": 0.128
+  },
+  {
+   "seed": 7,
+   "fell": false,
+   "t_end": 56.0,
+   "events": [
+    [
+     1.01,
+     "hop"
+    ],
+    [
+     21.01,
+     "stop"
+    ],
+    [
+     32.01,
+     "flip"
+    ],
+    [
+     44.0,
+     "flip"
+    ]
+   ],
+   "hops_before_stop": 6,
+   "jumps_total": 12,
+   "flips": 2,
+   "apex_mean_cm": 17.7,
+   "max_tilt_while_hopping_deg": 1.82,
+   "stick_after_stop_at": 24.48,
+   "final_phase": "stick",
+   "final_tilt_deg": 0.32,
+   "drift_m": 0.081
+  }
+ ]
+}

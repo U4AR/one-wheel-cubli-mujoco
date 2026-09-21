@@ -26,6 +26,7 @@ from cubli.live import LiveSim
 from cubli.live_rolling import LiveRolling
 from cubli.rolling_kane import gyro_design
 from cubli.live_somersault import LiveSomersault
+from cubli.live_pogo import LivePogo
 from cubli.params import NOMINAL
 from cubli.tunings import LATEST_FILE
 
@@ -37,6 +38,7 @@ pivot_sim = LiveSim()
 rolling_sim = None          # built on first use (~8 s: speed-scheduled controller)
 single_sim = None           # one-motor (hub + passive gyro) rolling hoop
 free_sim = None             # free-body cube on the floor (somersault)
+pogo_sim = None             # pogo cross: one motor balances + winds the spring
 sim = pivot_sim
 clients: set = set()
 ctl = dict(paused=False, speed=1.0)
@@ -157,7 +159,7 @@ async def run_job(name, args):
 
 
 def handle(cmd):
-    global sim, rolling_sim, single_sim, free_sim
+    global sim, rolling_sim, single_sim, free_sim, pogo_sim
     c = cmd.get("cmd")
     if c == "pulse" and hasattr(sim, "kick"):
         sim.kick(cmd["preset"], float(cmd.get("force", 1.5)), float(cmd.get("duration", 0.05)))
@@ -166,6 +168,8 @@ def handle(cmd):
         if name in ("somersault", "jump"):
             sim.start(name, w_spin=float(cmd.get("w_spin", 420)),
                       w_rev=None if cmd.get("w_rev") is None else float(cmd["w_rev"]))
+        elif name in ("hop", "stop", "stick", "flip"):
+            sim.start(name)
         elif name == "settle":
             sim.settle()
         elif name == "stand":
@@ -229,6 +233,12 @@ def handle(cmd):
                 free_sim = LiveSomersault()
             sim = free_sim
             sim.settle()
+            return dict(type="layout", layout=layout)
+        if layout == "pogo":
+            if pogo_sim is None:
+                pogo_sim = LivePogo()
+            sim = pogo_sim
+            sim.reset()
             return dict(type="layout", layout=layout)
         if layout == "rolling_single":
             if single_sim is None:
