@@ -1,0 +1,38 @@
+[
+ {
+  "tilt_deg": 10.0,
+  "steps": {
+   "heading_at_40s": 14.5,
+   "heading_at_130s": 4.8,
+   "peak_wheel": 175,
+   "wheel_at_130s": 112
+  },
+  "tap": {
+   "peak_heading": 24.6,
+   "heading_at_90s": 3.8,
+   "wheel_at_90s": 1
+  },
+  "hold_180s": {
+   "true_heading_drift_deg": -1.0
+  },
+  "max_drop_N": 2.72
+ },
+ {
+  "tilt_deg": 15.0,
+  "steps": {
+   "heading_at_40s": 32.2,
+   "heading_at_130s": 3.5,
+   "peak_wheel": 170,
+   "wheel_at_130s": 4
+  },
+  "tap": {
+   "peak_heading": 18.5,
+   "heading_at_90s": 3.6,
+   "wheel_at_90s": 1
+  },
+  "hold_180s": {
+   "true_heading_drift_deg": -0.15
+  },
+  "max_drop_N": 2.86
+ }
+]

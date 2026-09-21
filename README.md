@@ -156,7 +156,27 @@ So about 10° of tilt buys yaw control without losing balance margin. Beyond abo
 
 **An off-centre wheel mass (unbalance)** does nothing useful: the rotating force averages to zero over each turn. It is also nearly harmless here, because the wheel idles near 0 rad/s while balancing. Even 4 mm of offset (0.9 g·m) only lowers the recoverable drop from 2.37 N to 2.06 N, since it only bites during recoveries when the wheel spins at hundreds of rad/s.
 
-Both are adjustable in the live viewer (Plant: wheel tilt, unbalance, pivot friction; plus a yaw-control panel). The viewer's yaw loop is more conservative than the script. Its priorities are balance > stop the spin > heading. It caps the wheel target at 250 rad/s and fades heading correction out as the wheel nears that budget, because the balance loop tracks the wheel-speed target loosely (overshoots of about 150 rad/s) and a looser loop ran the wheel into saturation after about 50 s. At 10° tilt and no friction, it absorbs about 80 % of a 1.5 N sideways tap's spin and never falls in 150 s tests. With friction on, friction stops the body anyway, and the loop leaves the wheel parked at 200–250 rad/s. So on a real table it is better left off.
+Both are adjustable in the live viewer (Plant: wheel tilt, unbalance, pivot friction; plus a yaw-control panel). The viewer's yaw loop is more conservative than the script. Its priorities are balance > stop the spin > heading. It caps the wheel target at 250 rad/s and fades heading correction out as the wheel nears that budget, because the balance loop tracks the wheel-speed target loosely (overshoots of about 150 rad/s) and a looser loop ran the wheel into saturation after about 50 s. At 10° tilt and no friction, it absorbs about 80 % of a 1.5 N sideways tap's spin and never falls in 150 s tests. This frictionless loop has since been replaced in the viewer by the friction-aware controller described next.
+
+### Yaw control on a realistic, frictional pivot (`cubli/yaw.py`, `scripts/yaw_friction.py`)
+
+The frictionless yaw loop above doesn't carry over to a real pivot. With a tilted wheel, three extra things are needed:
+
+1. **Proper wheel-speed tracking.** The balance LQR regulates around a moving wheel-speed reference, plus a feedforward lean and torque that make the wheel accelerate as commanded (`Controller.step(..., wheel_ref=(w_ref, a_ff))`). Two things broke along the way. Removing the LQR's own wheel-speed feedback destabilises balance: its 0.03 N m per rad/s gain looks small but is worth several N m in transients. Feedforward alone lets the wheel drift, because the balance point is never known exactly.
+2. **A friction-aware yaw controller** that works in three modes:
+   - **turn:** PD on heading on the slow, whole-body timescale (the end masses sit on flexible beams, so a fast jerk only turns the housing: 8× the gain). It adds Coulomb-friction compensation and a breakaway kick.
+   - **unload:** each second of turning burns τ_s / (I_w sin ζ) ≈ 25 rad/s of wheel speed at 10°. So once the wheel has used its 150 rad/s turning budget, the controller stops pushing and lets friction stop the body. It then spins the wheel down gently enough (30 % of the stiction torque) that the body stays put and the momentum goes into the ground. Big turns ratchet: turn, unload, turn.
+   - **hold:** on target, stiction holds the heading for free, and the gyro bias is re-estimated while the body is known to be still.
+3. **A realistic budget.** The balance loop tracks the wheel target loosely (about 150 rad/s of overshoot), so turning stops well short of the 450 rad/s limit. A 220 rad/s budget made 15° tilt fall; 150 rad/s works.
+
+Results on the realistic plant: pivot dry friction 4·10⁻³ N m, 2 mm CoM offset, sensor noise and bias, 10 ms delay.
+
+| tilt | 45° heading command | back to 0° (after 60 s) | 1.5 N sideways tap | 3-min hold drift | max drop |
+|---|---|---|---|---|---|
+| 10° | ratchets, 14.5° reached after 35 s | 4.8° off | peaks 24.6°, returns to 3.8°, wheel unloaded to 1 rad/s | −1.0° | 2.72 N |
+| 15° | 32° reached after 35 s | 3.5° off | peaks 18.5°, returns to 3.6°, wheel 1 rad/s | −0.15° | 2.86 N |
+
+Robustness: no falls in 24 runs with pivot friction at 0.5×, 1× and 2× the controller's assumption, at 10° and 15° tilt, over two noise seeds. The peak wheel speed stayed at or below 304 rad/s. The remaining heading error of about 3–10° is a sensing limit: heading is the integrated gyro, and errors picked up while turning (including slow creep during unloading) stay. An absolute heading sensor (magnetometer, camera) would remove it. Turns are slow, and slower still with more friction. That's the price of pushing a 1.25 m bar around against a sticky pivot with 0.08–0.12 of the wheel's torque.
 
 ## Live interactive viewer
 

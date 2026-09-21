@@ -165,7 +165,12 @@
       <h2>Yaw (needs a tilted wheel)</h2>
       <div class="check"><input type="checkbox" id="yawOn"><label for="yawOn">Yaw control: heading hold / stop spin</label></div>
       <label class="sl">Heading target <output id="oHead"></output><input id="head" type="range" min="-180" max="180" step="5" value="0"></label>
-      <div class="muted">With a tilted wheel, vertical spin can be moved into the wheel: I_z·γ̇ + I_w·sin(tilt)·ω stays constant. A slow outer loop sets the wheel-speed target, and the balance loop tracks it. Try tilt 10° in Plant with pivot friction off, apply, tick this, then tap sideways (T): the spin stops and the wheel keeps the momentum. With friction on, friction stops the spin first, and the wheel can't hand momentum back to turn the body, so heading control is limited. Priorities: balance > stop the spin > heading. Heading correction fades out as the wheel nears its 250 rad/s budget. Works best at 5–15° tilt. Above ~20° balancing suffers.</div>
+      <div class="muted" id="yawInfo"></div>
+      <div class="muted">How it works with a tilted wheel on a real, frictional pivot:
+        <b>turn</b>: push past the pivot's stiction, then brake;
+        <b>unload</b>: when the wheel has used its turning budget (150 rad/s), friction stops the body, then the wheel spins down gently enough that stiction holds the body still, so the momentum goes into the ground;
+        <b>hold</b>: on target, stiction holds the heading for free and the gyro is re-zeroed.
+        Big turns ratchet (turn, unload, turn). Try Plant → wheel tilt 10–15°, apply, then tick this.</div>
     </div>
 
     <div class="panel">
@@ -314,7 +319,7 @@ function onTelemetry(m) {
     $("readout").innerHTML = [
       ["time", state.t.toFixed(2) + " s"], ["roll α", buf.a[L].toFixed(3) + "°"], ["pitch β", buf.b[L].toFixed(3) + "°"],
       ["yaw γ", state.gamma_deg.toFixed(2) + "°" + (state.yaw_on ? `  → target ${state.heading_ref_deg.toFixed(0)}°` : "")],
-      ["wheel target", state.wheel_ref.toFixed(0) + " rad/s"], ["torque", buf.u[L].toFixed(3) + " N m"],
+      ["yaw control", state.yaw_on ? `${state.yaw_mode} · wheel target ${state.wheel_ref.toFixed(0)} rad/s · heading est ${state.heading_est_deg.toFixed(1)}°` : (state.yaw_available ? "off" : "needs a tilted wheel")], ["torque", buf.u[L].toFixed(3) + " N m"],
       ["available", buf.lim[L].toFixed(2) + " N m"], ["wheel", buf.w[L].toFixed(1) + " rad/s"],
       ["I²t", buf.heat[L].toFixed(1) + " %"], ["CoM estimate", state.com_est_deg.map(v => v.toFixed(2) + "°").join(", ")],
       ["beam δ1, δ2", state.beam_mrad.map(v => v.toFixed(3)).join(", ") + " mrad"],
@@ -322,6 +327,9 @@ function onTelemetry(m) {
     ].map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join("");
   }
   if (m.grab == null && !grabbing) $("grabInfo").textContent = "Not grabbing";
+  $("yawOn").disabled = !state.yaw_available;
+  if (!state.yaw_available && $("yawOn").checked) $("yawOn").checked = false;
+  $("yawInfo").textContent = state.yaw_available ? "" : "Set Plant → wheel axis tilt > 0 and apply first.";
 }
 function appendLog(line) {
   const el = $("log"); const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;

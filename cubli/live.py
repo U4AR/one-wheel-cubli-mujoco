@@ -14,6 +14,7 @@ from .params import NOMINAL
 from .controller import Controller
 from .sim import SensorModel, Motor
 from .tunings import get
+from .yaw import YawController
 
 N_IMU = len(IMU_POS)
 FALL_DEG = 16.0   # just before an end mass / housing corner touches the ground
@@ -60,6 +61,14 @@ class LiveSim:
         self.body_names = {self.m.body(i).name: i for i in range(self.m.nbody)}
         self.reset()
 
+    def set_yaw(self, on):
+        """Enable/disable yaw control. The heading estimate is initialised from the
+        true heading (as if from a one-off compass fix), then integrates the gyro."""
+        if on and self.yaw is not None and not self.yaw_on:
+            self.yaw.reset(heading=float(self.d.qpos[self.jid["gamma"]]),
+                           wheel_speed=float(self.d.qvel[self.vid["phi"]]))
+        self.yaw_on = bool(on) and self.yaw is not None
+
     def make_controller(self):
         t = replace(get(self.tuning_name), com_enable=self.com_enable)
         self.ctrl = Controller(self.plant.with_(com_offset_xy=(0.0, 0.0), wheel_ecc=0.0), t, self.Ts)
@@ -78,8 +87,9 @@ class LiveSim:
         self.pulses = []          # [t_end, body_id, force(3)]
         self.grab = None          # dict(body, local point, force)
         self.fell = False
-        self.gamma_hat = 0.0          # heading from integrated gyro (starts at truth)
-        self.w_ref = 0.0
+        self.yaw = None
+        if abs(np.sin(self.plant.wheel_tilt)) > 1e-3:
+            self.yaw = YawController(self.plant, self.Ts, tau_s=NOMINAL.yaw_friction)
         self.u = self.ulim = 0.0
         self.samples = []
 
@@ -107,26 +117,11 @@ class LiveSim:
         self.buf.append(self.measure()); self.buf.pop(0)
         if self.controller_on and not self.fell:
             acc, gyr, ws = self.buf[0]
-            yaw_rate = gyr.mean(0)[2]
-            self.gamma_hat += yaw_rate * self.Ts
-            zeta = self.plant.wheel_tilt
-            if self.yaw_on and abs(np.sin(zeta)) > 1e-3:
-                # L_z = I_z*gamma_d + I_w*sin(zeta)*phi_d is conserved -> the
-                # wheel-speed setpoint sets the yaw rate (see scripts/wheel_offset.py)
-                p = self.plant
-                k_yaw = (p.I_hz + 2 * p.m_e * p.l_E**2 + p.I_wy) / (p.I_wx * np.sin(zeta))
-                err = (self.gamma_hat - self.heading_ref + np.pi) % (2 * np.pi) - np.pi
-                err = float(np.clip(err, -0.35, 0.35))   # big heading errors: turn slowly
-                # priorities: balance > stop the spin > heading. Heading correction
-                # fades out as the wheel approaches its momentum budget, and the
-                # target keeps ~200 rad/s of the 450 rad/s in reserve for balancing
-                # (the balance loop tracks the target loosely and overshoots).
-                headroom = float(np.clip((200.0 - abs(ws)) / 100.0, 0.0, 1.0))
-                target = float(np.clip(ws + k_yaw * (yaw_rate + 0.3 * headroom * err), -250, 250))
-                self.w_ref += float(np.clip(target - self.w_ref, -10 * self.Ts, 10 * self.Ts))
-            else:
-                self.w_ref += float(np.clip(-self.w_ref, -10 * self.Ts, 10 * self.Ts))
-            u_cmd = self.ctrl.step(acc, gyr, ws - self.w_ref)
+            ref = None
+            if self.yaw_on and self.yaw is not None:
+                # friction-aware yaw control through a tilted wheel (cubli/yaw.py)
+                ref = self.yaw.step(gyr.mean(0)[2], ws, self.heading_ref)
+            u_cmd = self.ctrl.step(acc, gyr, ws, wheel_ref=ref)
             self.u, self.ulim = self.motor.limit(u_cmd, d.qvel[self.vid["phi"]], self.Ts)
             self.ctrl.applied(self.u)
         else:
@@ -159,7 +154,10 @@ class LiveSim:
         return dict(t=d.time, fell=self.fell, tuning=self.tuning_name,
                     com_enable=self.com_enable, noise=self.noise_scale,
                     yaw_on=self.yaw_on, heading_ref_deg=float(np.rad2deg(self.heading_ref)),
-                    heading_est_deg=float(np.rad2deg(self.gamma_hat)), wheel_ref=self.w_ref,
+                    yaw_available=self.yaw is not None,
+                    yaw_mode=(self.yaw.mode if (self.yaw is not None and self.yaw_on) else "off"),
+                    heading_est_deg=float(np.rad2deg(self.yaw.gamma_hat)) if self.yaw is not None else 0.0,
+                    wheel_ref=float(self.yaw.w_ref) if (self.yaw is not None and self.yaw_on) else 0.0,
                     delay=self.delay_steps, controller_on=self.controller_on,
                     com_est_deg=np.rad2deg(self.ctrl.com).tolist(),
                     gamma_deg=float(np.rad2deg(d.qpos[self.jid["gamma"]])),

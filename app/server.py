@@ -161,7 +161,7 @@ def handle(cmd):
     elif c == "speed":
         ctl["speed"] = float(np.clip(cmd["value"], 0.05, 2.0))
     elif c == "yaw":
-        sim.yaw_on = bool(cmd.get("on", sim.yaw_on))
+        sim.set_yaw(bool(cmd.get("on", sim.yaw_on)))
         sim.heading_ref = float(np.deg2rad(cmd.get("heading_deg", np.rad2deg(sim.heading_ref))))
     elif c == "controller":
         sim.controller_on = bool(cmd["value"])

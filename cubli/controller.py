@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from scipy.linalg import solve_discrete_are
 
-from .linearize import discrete_reduced
+from .linearize import discrete_reduced, continuous_reduced
 from .model import IMU_POS
 from .params import CubliParams, NOMINAL
 
@@ -103,6 +103,16 @@ class Controller:
         self.p, self.tuning, self.Ts = p, tuning or Tuning(), Ts
         self.K, self.L, self.At, self.Bt, self.C = design(p, self.tuning, Ts)
         self.tau = imu_weights()
+        # steady state that makes the wheel accelerate at 1 rad/s^2 while the body
+        # stays upright: solve alpha_dd = beta_dd = d1_dd = d2_dd = 0, phi_dd = 1 for
+        # (alpha, beta, d1, d2, u). Used as feedforward when a wheel acceleration is
+        # commanded (yaw control with a tilted wheel).
+        Ac, Bc = continuous_reduced(p)
+        rows, cols = [1, 3, 6, 8, 4], [0, 2, 5, 7]
+        M = np.hstack([Ac[np.ix_(rows, cols)], Bc[rows]])
+        sol = np.linalg.solve(M, np.array([0, 0, 0, 0, 1.0]))
+        self.ss_x = np.zeros(NX); self.ss_x[cols] = sol[:4]
+        self.ss_u = sol[4]
         self.reset()
 
     def reset(self, gyro_bias=None):
@@ -131,17 +141,28 @@ class Controller:
         beta_d = w[1]
         return alpha, beta, alpha_d, beta_d
 
-    def step(self, acc, gyr, wheel_speed):
+    def step(self, acc, gyr, wheel_speed, wheel_ref=None):
+        """wheel_ref: optional (w_ref, a_ff) wheel-speed trajectory to follow, used
+        for yaw control with a tilted wheel. The LQR regulates around the moving
+        reference (its own wheel-speed feedback does the tracking) plus the
+        feedforward lean/torque that makes the wheel accelerate at a_ff."""
         a, b, ad, bd = self.tilt(acc, gyr)
+        xs, us = np.zeros(NX), 0.0
+        if wheel_ref is not None:
+            w_ref, a_ff = wheel_ref
+            xs, us = self.ss_x * a_ff, self.ss_u * a_ff
+            xs[4] = w_ref
         # CoM-offset estimate (Sec. 6): slow low-pass of the tilt angles
+        # (minus any lean commanded on purpose)
         if self.tuning.com_enable:
             k = self.Ts / self.tuning.com_tau
-            self.com += k * (np.array([a, b]) - self.com)
+            self.com += k * (np.array([a - xs[0], b - xs[2]]) - self.com)
         z = np.array([a - self.com[0], b - self.com[1], ad, bd, wheel_speed])
         # Eq. (21): predict with previous input, correct with delayed measurement
         xp = self.At @ self.xhat + self.Bt[:, 0] * self.u_prev
         self.xhat = xp + self.L @ (z - self.C @ xp)
-        u = float(-(self.K @ self.xhat)[0])
+        xref = np.concatenate([xs, xs[:5]])
+        u = float(us - (self.K @ (self.xhat - xref))[0])
         self.u_prev = u
         return u
 
