@@ -109,7 +109,13 @@ These are flagged with `ASSUMED` in `cubli/params.py`, `cubli/sim.py` and `cubli
 - **Sensor noise.** MPU-6050-class accelerometer noise 0.04 m/s², gyro noise 0.004 rad/s, residual biases, and Hall-sensor speed noise 0.3 rad/s.
 - **IMU positions.** Only the layout (4 near the pivot + 1 far away) is from the paper.
 - **State normalisation used before applying Q and R.** The paper normalises but does not give the scales. The printed LQR gain (Eq. 25) is therefore not directly comparable, although its sign pattern (−, −, +, +, +, −, −, +, +) matches.
-- **Model additions.** A 2 mm CoM offset toward the motor, and small yaw friction at the pivot.
+- **Model additions.** A 2 mm CoM offset toward the motor, and friction at the pivot about the vertical axis: 4·10⁻³ N m dry plus a small viscous term, which is roughly a hard corner on a table.
+
+### Why yaw is not controlled (and can't be, with this wheel)
+
+Like the paper, the controller only stabilises roll and pitch. Yaw is not just left out: the fixed wheel cannot stop a yaw spin at all. About the pivot, gravity and the ground force exert no torque around the vertical, and the motor torque is internal. The total vertical angular momentum is therefore conserved. When the system is balanced, the wheel axis is horizontal, so all of that momentum sits in the body's yaw rotation. In the simulation, a 0.2 rad/s spin is still exactly 0.200 rad/s after 10 s of active balancing.
+
+Gyroscopic coupling does appear once the wheel spins: the yaw ↔ α̇/β̇ terms grow linearly with wheel speed. It can only shuffle momentum around while the body wobbles. Only an external torque stops the spin, which here is the pivot friction. The alternative is a second actuator that can give stored momentum a vertical component: a vertical-axis reaction wheel (as in the original three-wheel Cubli) or a gimbaled wheel (control moment gyroscope). Both of those also saturate and eventually need friction to unload.
 - **Wheel inertia.** The paper's wheel inertia includes the motor rotor, so I_wx > I_wy + I_wz, which is not a valid single rigid body. The transverse wheel inertia is raised just enough to be physical. That is a change of about 4·10⁻⁵ kg m² against a housing inertia of about 3·10⁻² kg m², and Check 1 is unaffected.
 
 ## Usage

@@ -90,7 +90,7 @@ def build_xml(p: CubliParams = NOMINAL, timestep=5e-4, ground_limits=False) -> s
     <body name="housing" pos="0 0 0">
       <joint name="alpha" type="hinge" axis="1 0 0" {lim_a} damping="0"/>
       <joint name="beta"  type="hinge" axis="0 1 0" {lim_b}/>
-      <joint name="gamma" type="hinge" axis="0 0 1" limited="false" damping="{p.yaw_damping}"/>
+      <joint name="gamma" type="hinge" axis="0 0 1" limited="false" damping="{p.yaw_damping}" frictionloss="{p.yaw_friction}"/>
       <inertial pos="{cx} {cy} {p.l_S}" mass="{p.m_h}" diaginertia="{Ihx} {Ihy} {Ihz}"/>
       <!-- visuals only (inertial above overrides geom mass) -->
 {frame_geoms}

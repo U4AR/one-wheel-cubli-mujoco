@@ -16,7 +16,7 @@ _RED = [0, 6, 1, 7, 9, 4, 10, 5, 11]
 
 def continuous_full(p: CubliParams = NOMINAL, eps=1e-6):
     """Continuous-time A (12x12), B (12x1) of the full model at x=0, u=0."""
-    p = p.with_(com_offset_xy=(0.0, 0.0), yaw_damping=0.0)
+    p = p.with_(com_offset_xy=(0.0, 0.0), yaw_damping=0.0, yaw_friction=0.0)
     m, d = load(p)
     nq = m.nq
 

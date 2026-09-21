@@ -49,7 +49,12 @@ class CubliParams:
     # --- things the real system has that the ideal CAD model does not ------
     # (used to make the simulation honest, all ASSUMED)
     com_offset_xy: tuple = (0.002, 0.002)  # m, CoM shift toward the motor
-    yaw_damping: float = 2e-3              # N m s/rad, pivot friction in yaw
+    yaw_damping: float = 2e-3              # N m s/rad, viscous pivot friction in yaw
+    # Coulomb (dry) friction torque of the corner on the ground about the vertical:
+    # ~ (2/3) mu N r_contact = 0.67 * 0.3 * 19 N * 1 mm ~ 4e-3 N m. Nothing else can
+    # stop a yaw spin: gravity and the pivot force have no vertical torque about the
+    # pivot and the motor torque is internal, so vertical angular momentum is conserved.
+    yaw_friction: float = 4e-3             # N m
 
     def with_(self, **kw):
         return replace(self, **kw)
