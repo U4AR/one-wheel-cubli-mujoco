@@ -36,6 +36,14 @@ ctl = dict(paused=False, speed=1.0)
 job = dict(proc=None, name=None, lines=deque(maxlen=400), tune=[])
 GEN_RE = re.compile(r"gen\s+(\d+)\s+best\s+(-?[\d.]+)\s+gen-min\s+(-?[\d.]+)\s+median\s+(-?[\d.]+)")
 
+# hoop variants (scripts/ring_design.py)
+RING_PRESETS = {
+    # balances, but fragile: small hoop through the pivot + weights at 3 and 9 o'clock
+    "ring_weights": dict(R=0.2, M=0.1, w=0.3, middle=False),
+    # the "housing in the middle" hoop with the paper's pitch inertia: cannot balance
+    "ring_middle": dict(R=0.3196, M=0.7427, middle=True),
+}
+
 # pulse presets: body, unit force direction (world frame)
 PRESETS = {
     "drop_right": ("endmass2", (0, 0, -1)),   # object dropped on end mass 2 -> +beta
@@ -177,14 +185,26 @@ def handle(cmd):
             sim.buf = [sim.measure()] * (new_delay + 1)
     elif c == "plant":
         # physical changes need a new model -> rebuild and reset
+        layout = cmd.get("layout", "bar")
         p = NOMINAL.with_(m_e=float(cmd["m_e"]), com_offset_xy=(float(cmd["com_mm"]) / 1e3,) * 2,
                           wheel_tilt=float(np.deg2rad(cmd.get("tilt_deg", 0.0))),
                           wheel_ecc=float(cmd.get("ecc_mm", 0.0)) / 1e3)
         if not cmd.get("pivot_friction", True):
             p = p.with_(yaw_friction=0.0, yaw_damping=0.0)
+        if layout != "bar":
+            mh, lS, *_ = NOMINAL.housing_without_tube()
+            ring = RING_PRESETS[layout]
+            p = p.with_(layout="ring", ring_mass=ring["M"], ring_radius=ring["R"],
+                        ring_center=1.05 * ring["R"], ring_weights=ring.get("w", 0.0),
+                        core_raise=(1.05 * ring["R"] - lS) if ring["middle"] else 0.0)
+            sim.tuning_name = "ring"
+        elif sim.tuning_name == "ring":
+            sim.tuning_name = "tuned"
         p = p.with_(k=p.k_from_freq(float(cmd["f_beam"])))
         sim.plant = p
         sim.build()
+        if layout != "bar":
+            sim.reset((0.5, -0.5))    # hoops only recover from ~1 deg initial tilt
     elif c == "job":
         if cmd["name"] == "tune":
             gens, pop = str(int(cmd.get("gens", 10))), str(int(cmd.get("pop", 24)))

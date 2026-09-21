@@ -20,6 +20,15 @@ class CubliParams:
     # --- design variations (not in the paper; 0 = paper design) -----------------
     wheel_tilt: float = 0.0   # rad, wheel axis tilted up out of the x-y plane
     wheel_ecc: float = 0.0    # m, radial offset of the wheel's centre of mass (unbalance)
+    # --- "ring" variant: replace the cantilever + end masses by a thin hoop in the
+    # pitch (x-z) plane. The carbon tube (App. C: A = 7.225e-5 m^2, rho = 1560,
+    # 2*l_E long, at height l_Q) is removed from the housing's mass/inertia.
+    layout: str = "bar"       # "bar" (paper) or "ring"
+    ring_mass: float = 0.0    # kg
+    ring_radius: float = 0.0  # m
+    ring_center: float = 0.0  # m, height of the hoop centre above the pivot
+    core_raise: float = 0.0   # m, housing (+wheel, IMUs) raised above the pivot
+    ring_weights: float = 0.0 # kg, each of two point masses on the hoop at 3 and 9 o'clock
 
     # masses (kg)
     m_h: float = 1.101        # housing (incl. motor, electronics, beam)
@@ -59,11 +68,26 @@ class CubliParams:
     # pivot and the motor torque is internal, so vertical angular momentum is conserved.
     yaw_friction: float = 4e-3             # N m
 
+    def housing_without_tube(self):
+        """(mass, l_S, I_x, I_y, I_z about the pivot) of the housing minus the
+        cantilever tube, for the ring variant."""
+        mt = 1560.0 * 7.225e-5 * 2 * self.l_E
+        L = 2 * self.l_E
+        m = self.m_h - mt
+        lS = (self.m_h * self.l_S - mt * self.l_Q) / m
+        Ix = self.I_hx - mt * self.l_Q**2
+        Iy = self.I_hy - mt * (L**2 / 12 + self.l_Q**2)
+        Iz = self.I_hz - mt * L**2 / 12
+        return m, lS, Ix, Iy, Iz
+
     def with_(self, **kw):
         return replace(self, **kw)
 
     @property
     def m_total(self):
+        if self.layout == "ring":
+            return (self.housing_without_tube()[0] + self.m_w + self.ring_mass
+                    + 2 * self.ring_weights)
         return self.m_h + self.m_w + 2 * self.m_e
 
     def beam_freq_hz(self, l_free=0.523):

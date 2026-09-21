@@ -35,6 +35,12 @@ def get(name="tuned"):
         return Tuning()
     if name == "tuned":
         return to_tuning(json.load(open(TUNED_FILE))["z"])
+    if name == "ring":
+        # weights that balance the small hoop-through-pivot variant
+        # (scripts/ring_design.py): paper weights with alpha weight x0.3, R x3
+        t = Tuning()
+        t.Q = t.Q.copy(); t.Q[0] *= 0.3; t.R *= 3.0
+        return t
     if name == "latest-run":
         return to_tuning(json.load(open(LATEST_FILE))["z"])
     raise ValueError(name)

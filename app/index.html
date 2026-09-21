@@ -151,6 +151,7 @@
           <option value="tuned">CMA-ES tuned</option>
           <option value="paper">paper (Eq. 23–24)</option>
           <option value="latest-run" id="optLatest" disabled>latest run from this page</option>
+          <option value="ring">hoop weights (auto for hoop layouts)</option>
         </select>
       </div>
       <div class="check"><input type="checkbox" id="com" checked><label for="com">CoM-offset estimator</label></div>
@@ -175,6 +176,12 @@
 
     <div class="panel">
       <h2>Plant (physics)</h2>
+      <div class="row"><label class="muted">Layout</label>
+        <select id="layout">
+          <option value="bar">bar + 2 end masses (paper)</option>
+          <option value="ring_weights">hoop Ø0.4 m through pivot + 2 weights (balances from ≤1° tilt, fragile)</option>
+          <option value="ring_middle">hoop Ø0.64 m, housing in middle (cannot balance)</option>
+        </select></div>
       <label class="sl">End mass each [kg] <output id="oMe"></output><input id="me" type="range" min="0.15" max="0.5" step="0.01" value="0.304"></label>
       <label class="sl">Beam frequency f0 [Hz] <output id="oFb"></output><input id="fb" type="range" min="20" max="120" step="0.5" value="57.2"></label>
       <label class="sl">CoM offset toward motor [mm] <output id="oCom"></output><input id="comoff" type="range" min="0" max="8" step="0.5" value="2"></label>
@@ -328,6 +335,7 @@ function onTelemetry(m) {
   }
   if (m.grab == null && !grabbing) $("grabInfo").textContent = "Not grabbing";
   $("yawOn").disabled = !state.yaw_available;
+  if (document.activeElement !== $("tuning")) $("tuning").value = state.tuning;
   if (!state.yaw_available && $("yawOn").checked) $("yawOn").checked = false;
   $("yawInfo").textContent = state.yaw_available ? "" : "Set Plant → wheel axis tilt > 0 and apply first.";
 }
@@ -366,7 +374,7 @@ $("ctrlOn").onchange = () => send({ cmd: "controller", value: $("ctrlOn").checke
 const sendSettings = () => send({ cmd: "settings", tuning: $("tuning").value, com_enable: $("com").checked, noise: +$("noise").value, delay: +$("delay").value });
 ["tuning", "com", "delay"].forEach(id => $(id).onchange = sendSettings);
 $("noise").onchange = sendSettings;
-$("applyPlant").onclick = () => { for (const k in buf) buf[k].length = 0; send({ cmd: "plant", m_e: +$("me").value, f_beam: +$("fb").value, com_mm: +$("comoff").value, tilt_deg: +$("tilt").value, ecc_mm: +$("ecc").value, pivot_friction: $("pfric").checked }); };
+$("applyPlant").onclick = () => { for (const k in buf) buf[k].length = 0; send({ cmd: "plant", m_e: +$("me").value, f_beam: +$("fb").value, com_mm: +$("comoff").value, tilt_deg: +$("tilt").value, ecc_mm: +$("ecc").value, pivot_friction: $("pfric").checked, layout: $("layout").value }); };
 const sendYaw = () => send({ cmd: "yaw", on: $("yawOn").checked, heading_deg: +$("head").value });
 $("yawOn").onchange = sendYaw; $("head").onchange = sendYaw;
 $("plantDefault").onclick = () => { $("me").value = 0.304; $("fb").value = 57.2; $("comoff").value = 2; $("tilt").value = 0; $("ecc").value = 0; ["tilt", "ecc"].forEach(i => $(i).dispatchEvent(new Event("input"))); $("me").dispatchEvent(new Event("input")); $("fb").dispatchEvent(new Event("input")); $("comoff").dispatchEvent(new Event("input")); };

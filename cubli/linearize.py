@@ -38,7 +38,19 @@ def continuous_full(p: CubliParams = NOMINAL, eps=1e-6):
 
 def continuous_reduced(p: CubliParams = NOMINAL):
     A, B = continuous_full(p)
-    return A[np.ix_(_RED, _RED)], B[_RED]
+    if A.shape[0] == 12:
+        return A[np.ix_(_RED, _RED)], B[_RED]
+    # rigid variant (ring): no bending joints. Keep the 9-state layout so the
+    # estimator/controller code is unchanged; the bending states become stable,
+    # decoupled placeholders that are never excited (their estimates stay 0).
+    red = [0, 4, 1, 5, 7]                   # alpha, alpha_d, beta, beta_d, phi_d
+    Ar = np.zeros((9, 9)); Br = np.zeros((9, 1))
+    Ar[:5, :5] = A[np.ix_(red, red)]; Br[:5] = B[red]
+    w, z = 2 * np.pi * 60.0, 0.05
+    for i in (5, 7):
+        Ar[i, i + 1] = 1.0
+        Ar[i + 1, i], Ar[i + 1, i + 1] = -w * w, -2 * z * w
+    return Ar, Br
 
 
 def c2d(A, B, Ts):

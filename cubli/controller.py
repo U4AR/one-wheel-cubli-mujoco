@@ -102,7 +102,8 @@ class Controller:
     def __init__(self, p: CubliParams = NOMINAL, tuning: Tuning = None, Ts=0.01):
         self.p, self.tuning, self.Ts = p, tuning or Tuning(), Ts
         self.K, self.L, self.At, self.Bt, self.C = design(p, self.tuning, Ts)
-        self.tau = imu_weights()
+        # IMU positions relative to the pivot (the housing core may be raised)
+        self.tau = imu_weights(IMU_POS + np.array([0.0, 0.0, p.core_raise]))
         # steady state that makes the wheel accelerate at 1 rad/s^2 while the body
         # stays upright: solve alpha_dd = beta_dd = d1_dd = d2_dd = 0, phi_dd = 1 for
         # (alpha, beta, d1, d2, u). Used as feedforward when a wheel acceleration is

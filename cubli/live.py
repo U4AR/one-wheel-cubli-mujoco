@@ -53,7 +53,8 @@ class LiveSim:
             self.renderer.close()
         self.renderer = mujoco.Renderer(self.m, self.H, self.W)
         self.jid = {n: self.m.joint(n).qposadr[0] for n in
-                    ["alpha", "beta", "gamma", "phi", "delta1", "delta2"]}
+                    ["alpha", "beta", "gamma", "phi", "delta1", "delta2"]
+                    if mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_JOINT, n) >= 0}
         self.vid = {n: self.m.joint(n).dofadr[0] for n in self.jid}
         self.acc_ids = [self.m.sensor(f"acc{i}").adr[0] for i in range(N_IMU)]
         self.gyr_ids = [self.m.sensor(f"gyr{i}").adr[0] for i in range(N_IMU)]
@@ -161,7 +162,8 @@ class LiveSim:
                     delay=self.delay_steps, controller_on=self.controller_on,
                     com_est_deg=np.rad2deg(self.ctrl.com).tolist(),
                     gamma_deg=float(np.rad2deg(d.qpos[self.jid["gamma"]])),
-                    beam_mrad=[1e3 * d.qpos[self.jid["delta1"]], 1e3 * d.qpos[self.jid["delta2"]]],
+                    beam_mrad=[1e3 * d.qpos[self.jid[n]] if n in self.jid else 0.0
+                               for n in ("delta1", "delta2")],
                     plant=dict(tilt_deg=float(np.rad2deg(self.plant.wheel_tilt)),
                                ecc_mm=1e3 * self.plant.wheel_ecc, m_e=self.plant.m_e, f_beam=self.plant.beam_freq_hz(),
                                com_offset_mm=1e3 * self.plant.com_offset_xy[0]))

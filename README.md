@@ -178,6 +178,34 @@ Results on the realistic plant: pivot dry friction 4·10⁻³ N m, 2 mm CoM offs
 
 Robustness: no falls in 24 runs with pivot friction at 0.5×, 1× and 2× the controller's assumption, at 10° and 15° tilt, over two noise seeds. The peak wheel speed stayed at or below 304 rad/s. The remaining heading error of about 3–10° is a sensing limit: heading is the integrated gyro, and errors picked up while turning (including slow creep during unloading) stay. An absolute heading sensor (magnetometer, camera) would remove it. Turns are slow, and slower still with more friction. That's the price of pushing a 1.25 m bar around against a sticky pivot with 0.08–0.12 of the wheel's torque.
 
+### What if the two end masses become a ring? (`scripts/ring_design.py`)
+
+The idea: replace the cantilever and end masses with a hoop in the pitch plane, so it looks like a ring balancing with the flywheel inside. I kept the paper's parameters as far as physically possible. The hoop is modelled as rigid, and the carbon tube's mass is removed from the housing.
+
+**It can't keep the parameters, for a geometric reason.** The paper's added mass is wide and low: end masses 0.6 m out and only 0.21 m up. That makes pitch inertia about 5× roll inertia (ε = 0.43, the silver ratio). A circle standing on its bottom is as tall as it is wide:
+
+- a uniform hoop adds MR² about pitch but 1.5·MR² about roll (both about its bottom point), capping the ratio at 4/3;
+- even with all its mass at 3 and 9 o'clock the cap is 2.
+
+| | bar (paper) | A: hoop, housing in middle | B: hoop through pivot | C: Ø0.4 m hoop through pivot + 2×0.3 kg at 3/9 o'clock |
+|---|---|---|---|---|
+| what's kept | – | total mass, pitch inertia | pitch inertia, gravity torque | – |
+| size | 1.25 m bar | R 0.32 m, 0.74 kg | R 0.84 m, 0.18 kg | R 0.2 m, 0.1 kg hoop + weights |
+| ε = π_β/π_α | 0.43 | 0.91 | 0.87 | 0.78 |
+| controllability volume (Eq. 4) | 0.39 | 0.0004 | 0.0011 | 0.038 |
+| balances | yes | **no**: needs gains around 5,500 N m/rad, saturates the motor within 0.2 s even with perfect sensors | **no** | yes, but fragile |
+| recoverable initial tilt | > 2° | – | – | about 1° |
+| max drop on the far end (50 ms) | 2.34 N | – | – | 0.63 N |
+| wheel speed while undisturbed | ~0 | – | – | 190–230 rad/s |
+
+With nearly equal tilt frequencies, the single wheel can barely tell the two directions apart. The LQR gains explode and the 3.4 N m / 450 rad/s motor saturates. Getting a ring-like shape to work well needs the mass wide and low again:
+
+- a flattened (elliptical) hoop;
+- a hoop balanced on a post at its centre, so the ring's height no longer counts;
+- or a much stronger actuator.
+
+All three layouts can be picked in the live viewer (Plant → Layout).
+
 ## Live interactive viewer
 
 `app/server.py` runs the real MuJoCo plant and the full estimator/controller in real time, and streams it to your browser:

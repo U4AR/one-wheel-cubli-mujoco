@@ -43,11 +43,13 @@ class Motor:
 
 @dataclass
 class Disturbance:
-    """Force (N, world frame) on a body for [t0, t0+dur)."""
+    """Force (N, world frame) on a body for [t0, t0+dur), applied at the body's
+    centre of mass or at `point` (body frame, m)."""
     t0: float
     dur: float
     body: str
     force: tuple
+    point: tuple = None
 
 
 @dataclass
@@ -76,8 +78,12 @@ def run(T=10.0, plant: CubliParams = NOMINAL, model_p: CubliParams = None,
     ctrl = Controller(model_p, tuning, Ts)
     motor = Motor(plant)
 
-    jid = {n: m.joint(n).qposadr[0] for n in ["alpha", "beta", "gamma", "phi", "delta1", "delta2"]}
-    vid = {n: m.joint(n).dofadr[0] for n in jid}
+    names = [n for n in ["alpha", "beta", "gamma", "phi", "delta1", "delta2"]
+             if mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, n) >= 0]
+    jid = {n: m.joint(n).qposadr[0] for n in names}
+    vid = {n: m.joint(n).dofadr[0] for n in names}
+    qp = lambda n: d.qpos[jid[n]] if n in jid else 0.0   # ring variant: no bending joints
+    qv = lambda n: d.qvel[vid[n]] if n in vid else 0.0
     d.qpos[jid["alpha"]], d.qpos[jid["beta"]] = x0
     mujoco.mj_forward(m, d)
 
@@ -100,8 +106,7 @@ def run(T=10.0, plant: CubliParams = NOMINAL, model_p: CubliParams = None,
         return np.array([d.qpos[jid["alpha"]], d.qvel[vid["alpha"]],
                          d.qpos[jid["beta"]], d.qvel[vid["beta"]],
                          d.qvel[vid["phi"]],
-                         d.qpos[jid["delta1"]], d.qvel[vid["delta1"]],
-                         d.qpos[jid["delta2"]], d.qvel[vid["delta2"]]])
+                         qp("delta1"), qv("delta1"), qp("delta2"), qv("delta2")])
 
     n_ctrl = int(round(T / Ts))
     sub = int(round(Ts / dt))
@@ -126,7 +131,11 @@ def run(T=10.0, plant: CubliParams = NOMINAL, model_p: CubliParams = None,
             d.xfrc_applied[:] = 0
             for db in disturbances:
                 if db.t0 <= d.time < db.t0 + db.dur:
-                    d.xfrc_applied[body_ids[db.body], :3] += db.force
+                    b = body_ids[db.body]
+                    d.xfrc_applied[b, :3] += db.force
+                    if db.point is not None:
+                        pw = d.xpos[b] + d.xmat[b].reshape(3, 3) @ np.asarray(db.point)
+                        d.xfrc_applied[b, 3:] += np.cross(pw - d.xipos[b], db.force)
             mujoco.mj_step(m, d)
             if frames is not None and renderer is not None and \
                     int(round(d.time / dt)) % frame_every == 0:

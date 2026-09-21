@@ -36,10 +36,16 @@ def build_xml(p: CubliParams = NOMINAL, timestep=5e-4, ground_limits=False) -> s
         lim_a = lim_b = 'limited="false"'
 
     cx, cy = p.com_offset_xy
+    ring = p.layout == "ring"
+    if ring:
+        m_h, l_S, I_hx, I_hy, I_hz = p.housing_without_tube()
+    else:
+        m_h, l_S, I_hx, I_hy, I_hz = p.m_h, p.l_S, p.I_hx, p.I_hy, p.I_hz
     # housing inertia about its CoM (parallel-axis theorem from the pivot values)
-    Ihx = p.I_hx - p.m_h * (p.l_S**2 + cy**2)
-    Ihy = p.I_hy - p.m_h * (p.l_S**2 + cx**2)
-    Ihz = p.I_hz - p.m_h * (cx**2 + cy**2)
+    Ihx = I_hx - m_h * (l_S**2 + cy**2)
+    Ihy = I_hy - m_h * (l_S**2 + cx**2)
+    Ihz = I_hz - m_h * (cx**2 + cy**2)
+    zr = p.core_raise
     wq = f"{np.cos(p.eta/2)} 0 0 {np.sin(p.eta/2)}"  # rotate D about z by eta
     # wheel frame: rotate by eta about z, then tilt the spin axis up by wheel_tilt
     q = np.zeros(4)
@@ -61,8 +67,47 @@ def build_xml(p: CubliParams = NOMINAL, timestep=5e-4, ground_limits=False) -> s
     frame_geoms = "\n".join(
         f'      <geom type="capsule" fromto="{a[0]} {a[1]} {a[2]} {b[0]} {b[1]} {b[2]}" size="0.005" material="carbon" contype="0" conaffinity="0"/>'
         for a, b in edges)
+    if ring:
+        R, c, M = p.ring_radius, p.ring_center, p.ring_mass
+        n_seg = 64
+        pts = [(R * np.sin(2 * np.pi * i / n_seg), c - R * np.cos(2 * np.pi * i / n_seg))
+               for i in range(n_seg + 1)]
+        ring_geoms = "\n".join(
+            f'        <geom type="capsule" fromto="{x0} 0 {z0 - c} {x1} 0 {z1 - c}" size="0.008" material="mass" contype="0" conaffinity="0"/>'
+            for (x0, z0), (x1, z1) in zip(pts[:-1], pts[1:]))
+        hub = zr + p.l_P                      # spokes from the housing to the hoop
+        spokes = "\n".join(
+            f'        <geom type="capsule" fromto="0 0 {hub - c} {R * np.sin(t)} 0 {-R * np.cos(t)}" size="0.003" material="carbon" contype="0" conaffinity="0"/>'
+            for t in np.deg2rad([60, 120, 180, 240, 300]))
+        mw_ = p.ring_weights            # point masses at (+-R, 0, 0) from the hoop centre
+        Mt = M + 2 * mw_
+        wgeoms = "\n".join(
+            f'        <geom type="sphere" pos="{sx * R} 0 0" size="0.03" material="alu" contype="0" conaffinity="0"/>'
+            for sx in (-1, 1)) if mw_ > 0 else ""
+        mass_bodies = f"""      <body name="ring" pos="0 0 {c}">
+        <inertial pos="0 0 0" mass="{Mt}" diaginertia="{M * R**2 / 2 + 1e-9} {M * R**2 + 2 * mw_ * R**2} {M * R**2 / 2 + 2 * mw_ * R**2}"/>
+{wgeoms}
+{ring_geoms}
+{spokes}
+      </body>"""
+    else:
+        mass_bodies = f"""      <body name="endmass1" pos="0 0 {p.l_Q}">
+        <joint name="delta1" type="hinge" axis="0 0 1" stiffness="{p.k}" damping="{p.d}" limited="false"/>
+        <inertial pos="{-p.l_E} 0 0" mass="{p.m_e}" diaginertia="{tiny} {tiny} {tiny}"/>
+        <geom type="capsule" fromto="0 0 0 {-p.l_E} 0 0" size="0.012" material="carbon" contype="0" conaffinity="0"/>
+        <geom type="cylinder" pos="{-p.l_E} 0 0" size="0.03 0.025" euler="0 1.5708 0" material="mass" contype="0" conaffinity="0"/>
+      </body>
+      <body name="endmass2" pos="0 0 {p.l_Q}">
+        <joint name="delta2" type="hinge" axis="0 0 1" stiffness="{p.k}" damping="{p.d}" limited="false"/>
+        <inertial pos="{p.l_E} 0 0" mass="{p.m_e}" diaginertia="{tiny} {tiny} {tiny}"/>
+        <geom type="capsule" fromto="0 0 0 {p.l_E} 0 0" size="0.012" material="carbon" contype="0" conaffinity="0"/>
+        <geom type="cylinder" pos="{p.l_E} 0 0" size="0.03 0.025" euler="0 1.5708 0" material="mass" contype="0" conaffinity="0"/>
+      </body>"""
+    tip_geom = (f'      <geom type="capsule" fromto="0 0 0.004 0 0 {zr + 0.06}" size="0.006" material="alu" contype="0" conaffinity="0"/>'
+                if zr > 0 else "")
+    target_z = max(0.17, (p.ring_center * 0.8) if ring else 0.17)
     imu_sites = "\n".join(
-        f'        <site name="imu{i}" pos="{x} {y} {z}" size="0.006" rgba="0.1 0.8 0.2 1"/>'
+        f'          <site name="imu{i}" pos="{x} {y} {z}" size="0.006" rgba="0.1 0.8 0.2 1"/>'
         for i, (x, y, z) in enumerate(IMU_POS))
     imu_sensors = "\n".join(
         f'    <accelerometer name="acc{i}" site="imu{i}"/>\n'
@@ -72,6 +117,8 @@ def build_xml(p: CubliParams = NOMINAL, timestep=5e-4, ground_limits=False) -> s
 <mujoco model="one_wheel_cubli">
   <compiler angle="radian" autolimits="true"/>
   <option timestep="{timestep}" integrator="RK4" gravity="0 0 {-p.g0}"/>
+  <!-- every geom is visual only; all mass comes from explicit <inertial> elements -->
+  <default><geom density="0"/></default>
   <visual>
     <global offwidth="1280" offheight="720" azimuth="135" elevation="-15"/>
     <quality shadowsize="4096"/>
@@ -90,36 +137,28 @@ def build_xml(p: CubliParams = NOMINAL, timestep=5e-4, ground_limits=False) -> s
     <light pos="-1 1 1.5" dir="0.5 -0.5 -1" diffuse="0.3 0.3 0.3" castshadow="false"/>
     <camera name="front" pos="0.95 0.8 0.5" mode="targetbody" target="target"/>
     <camera name="side_beta" pos="0 -1.9 0.35" xyaxes="1 0 0 0 0 1"/>
-    <body name="target" pos="0 0 0.17"/>
+    <body name="target" pos="0 0 {target_z}"/>
     <geom name="floor" type="plane" size="3 3 0.1" material="grid" contype="0" conaffinity="0"/>
     <body name="housing" pos="0 0 0">
       <joint name="alpha" type="hinge" axis="1 0 0" {lim_a} damping="0"/>
       <joint name="beta"  type="hinge" axis="0 1 0" {lim_b}/>
       <joint name="gamma" type="hinge" axis="0 0 1" limited="false" damping="{p.yaw_damping}" frictionloss="{p.yaw_friction}"/>
-      <inertial pos="{cx} {cy} {p.l_S}" mass="{p.m_h}" diaginertia="{Ihx} {Ihy} {Ihz}"/>
+      <inertial pos="{cx} {cy} {l_S + zr}" mass="{m_h}" diaginertia="{Ihx} {Ihy} {Ihz}"/>
       <!-- visuals only (inertial above overrides geom mass) -->
+{tip_geom}
+      <body name="core" pos="0 0 {zr}">
 {frame_geoms}
-      <geom type="cylinder" fromto="0 0 {p.l_Q-0.02} 0 0 {p.l_Q+0.005}" size="0.018" material="alu" contype="0" conaffinity="0"/>
-      <geom type="box" pos="0 0 {p.l_P}" size="0.003 0.05 0.05" quat="{wq}" material="alu" contype="0" conaffinity="0"/>
+        <geom type="cylinder" fromto="0 0 {p.l_Q-0.02} 0 0 {p.l_Q+0.005}" size="0.018" material="alu" contype="0" conaffinity="0"/>
+        <geom type="box" pos="0 0 {p.l_P}" size="0.003 0.05 0.05" quat="{wq}" material="alu" contype="0" conaffinity="0"/>
 {imu_sites}
-      <body name="wheel" pos="0 0 {p.l_P}" quat="{wheel_q}">
-        <joint name="phi" type="hinge" axis="1 0 0" limited="false"/>
-        <inertial pos="0 {p.wheel_ecc} 0" mass="{p.m_w}" diaginertia="{p.I_wx} {Iwt} {Iwt}"/>
-        <geom type="cylinder" fromto="0.012 0 0 0.024 0 0" size="0.068" material="wheel" contype="0" conaffinity="0"/>
-        <geom type="box" pos="0.0185 0 0.04" size="0.007 0.01 0.02" rgba="1 1 1 1" contype="0" conaffinity="0"/>
+        <body name="wheel" pos="0 0 {p.l_P}" quat="{wheel_q}">
+          <joint name="phi" type="hinge" axis="1 0 0" limited="false"/>
+          <inertial pos="0 {p.wheel_ecc} 0" mass="{p.m_w}" diaginertia="{p.I_wx} {Iwt} {Iwt}"/>
+          <geom type="cylinder" fromto="0.012 0 0 0.024 0 0" size="0.068" material="wheel" contype="0" conaffinity="0"/>
+          <geom type="box" pos="0.0185 0 0.04" size="0.007 0.01 0.02" rgba="1 1 1 1" contype="0" conaffinity="0"/>
+        </body>
       </body>
-      <body name="endmass1" pos="0 0 {p.l_Q}">
-        <joint name="delta1" type="hinge" axis="0 0 1" stiffness="{p.k}" damping="{p.d}" limited="false"/>
-        <inertial pos="{-p.l_E} 0 0" mass="{p.m_e}" diaginertia="{tiny} {tiny} {tiny}"/>
-        <geom type="capsule" fromto="0 0 0 {-p.l_E} 0 0" size="0.012" material="carbon" contype="0" conaffinity="0"/>
-        <geom type="cylinder" pos="{-p.l_E} 0 0" size="0.03 0.025" euler="0 1.5708 0" material="mass" contype="0" conaffinity="0"/>
-      </body>
-      <body name="endmass2" pos="0 0 {p.l_Q}">
-        <joint name="delta2" type="hinge" axis="0 0 1" stiffness="{p.k}" damping="{p.d}" limited="false"/>
-        <inertial pos="{p.l_E} 0 0" mass="{p.m_e}" diaginertia="{tiny} {tiny} {tiny}"/>
-        <geom type="capsule" fromto="0 0 0 {p.l_E} 0 0" size="0.012" material="carbon" contype="0" conaffinity="0"/>
-        <geom type="cylinder" pos="{p.l_E} 0 0" size="0.03 0.025" euler="0 1.5708 0" material="mass" contype="0" conaffinity="0"/>
-      </body>
+{mass_bodies}
     </body>
   </worldbody>
   <actuator>
